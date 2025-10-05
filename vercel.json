@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "src/app/api/*/route.js": {
+      "maxDuration": 30
+    }
+  },
   "headers": [
     {
       "source": "/fonts/inter-var-latin.woff2",
@@ -8,12 +13,35 @@
           "value": "public, max-age=31536000, immutable"
         }
       ]
+    },
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, POST, PUT, DELETE, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type, Authorization"
+        }
+      ]
     }
   ],
   "crons": [
     {
       "path": "/api/cron",
       "schedule": "0 1 * * *"
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/proxy/:path*",
+      "destination": "/api/proxy/:path*"
     }
   ]
 }
