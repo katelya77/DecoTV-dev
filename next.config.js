@@ -3,7 +3,7 @@
 
 const nextConfig = {
   // 根据环境自动选择输出模式：Vercel自动处理，Docker使用standalone
-  ...(process.env.VERCEL ? {} : { output: 'standalone' }),
+  ...(process.env.VERCEL ? {} : process.env.DOCKER_ENV ? { output: 'standalone' } : {}),
   eslint: {
     dirs: ['src'],
   },
