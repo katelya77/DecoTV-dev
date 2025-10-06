@@ -136,13 +136,30 @@ export async function GET(req: NextRequest) {
           spider.startsWith('http://') ||
           spider.startsWith('https://')
         ) {
-          const spiderCheck = await tryFetchHead(spider, 3500);
+          const spiderCheck = await tryFetchHead(spider, 5000);
           result.spiderReachable = spiderCheck.ok;
           result.spiderStatus = spiderCheck.status;
           if (!spiderCheck.ok) {
-            result.issues.push(
-              `spider unreachable: ${spiderCheck.status || spiderCheck.error}`
-            );
+            // 优化错误提示，提供更详细的诊断信息
+            if (spiderCheck.status === 404) {
+              result.issues.push(
+                `spider 源文件不存在 (404) - 该 JAR 源可能已失效，建议使用 JAR 源诊断工具查找可用源`
+              );
+            } else if (spiderCheck.status === 403) {
+              result.issues.push(
+                `spider 访问被拒绝 (403) - 该源可能需要代理访问或已限制访问`
+              );
+            } else if (spiderCheck.error?.includes('timeout')) {
+              result.issues.push(
+                `spider 访问超时 - 网络延迟较高或源不可达，建议检查网络环境或更换源`
+              );
+            } else {
+              result.issues.push(
+                `spider 不可用: ${
+                  spiderCheck.status || spiderCheck.error
+                } - 建议使用 JAR 源诊断工具测试可用源`
+              );
+            }
           }
         }
       }

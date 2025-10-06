@@ -5953,15 +5953,39 @@ function AdminPageClient() {
                         </div>
                         {diagnosisResult.issues &&
                           diagnosisResult.issues.length > 0 && (
-                            <div>
-                              <div className='font-medium'>问题:</div>
-                              <ul className='ml-4 list-disc'>
+                            <div className='mt-2'>
+                              <div className='font-medium mb-1'>问题:</div>
+                              <ul className='ml-4 list-disc space-y-1'>
                                 {diagnosisResult.issues.map(
                                   (issue: string, index: number) => (
                                     <li key={index}>{issue}</li>
                                   )
                                 )}
                               </ul>
+                              {diagnosisResult.issues.some(
+                                (issue: string) =>
+                                  issue.includes('spider') ||
+                                  issue.includes('JAR')
+                              ) && (
+                                <div className='mt-3 p-2 bg-purple-100 dark:bg-purple-900/30 rounded border border-purple-300 dark:border-purple-700'>
+                                  <div className='flex items-center justify-between'>
+                                    <span className='text-xs font-medium'>
+                                      💡 建议使用 JAR 源诊断工具查找可用源
+                                    </span>
+                                    <button
+                                      onClick={() =>
+                                        window.open(
+                                          '/api/tvbox/jar-diagnostic',
+                                          '_blank'
+                                        )
+                                      }
+                                      className='px-2 py-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded text-xs font-medium transition-all transform hover:scale-105'
+                                    >
+                                      打开诊断工具
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           )}
                       </div>
@@ -6027,6 +6051,24 @@ function AdminPageClient() {
                             <span>强制刷新</span>
                           </>
                         )}
+                      </button>
+                      <button
+                        onClick={() =>
+                          window.open('/api/tvbox/jar-diagnostic', '_blank')
+                        }
+                        className='px-3 py-2 rounded-md bg-gradient-to-r from-purple-600 via-pink-500 to-indigo-600 hover:from-purple-700 hover:via-pink-600 hover:to-indigo-700 text-white transition-all text-sm font-medium flex items-center space-x-2 shadow-md hover:shadow-lg transform hover:scale-105'
+                      >
+                        <span>🔬</span>
+                        <span>JAR源诊断工具</span>
+                      </button>
+                      <button
+                        onClick={() =>
+                          window.open('/api/tvbox/jar-test', '_blank')
+                        }
+                        className='px-3 py-2 rounded-md bg-gradient-to-r from-green-600 via-emerald-500 to-teal-600 hover:from-green-700 hover:via-emerald-600 hover:to-teal-700 text-white transition-all text-sm font-medium flex items-center space-x-2 shadow-md hover:shadow-lg transform hover:scale-105'
+                      >
+                        <span>⚡</span>
+                        <span>JAR快速测试</span>
                       </button>
                     </div>
                   </div>

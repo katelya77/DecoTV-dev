@@ -37,7 +37,7 @@ export async function checkForUpdates(): Promise<{
       const response = await fetch('/VERSION.txt');
       currentTimestamp = (await response.text()).trim();
     } catch {
-      currentTimestamp = '20251005140531'; // 默认值
+      currentTimestamp = '20251006163200'; // 默认值
     }
 
     // 获取远程时间戳

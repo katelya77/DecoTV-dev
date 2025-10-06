@@ -170,19 +170,40 @@ export default function VersionChecker() {
               <div className='flex items-center space-x-2 mb-2'>
                 <Download className='w-5 h-5 text-orange-600 dark:text-orange-400' />
                 <h4 className='font-semibold text-orange-800 dark:text-orange-200'>
-                  发现新版本 {remote.version}
+                  发现新版本 v{remote.version}+{remote.timestamp}
                 </h4>
               </div>
 
-              {remote.releaseNotes && (
+              <div className='mb-3 space-y-2'>
+                <div className='flex items-center justify-between text-sm'>
+                  <span className='text-orange-700 dark:text-orange-300'>
+                    当前版本:
+                  </span>
+                  <span className='font-mono text-orange-600 dark:text-orange-400'>
+                    v{current.version} (构建:{' '}
+                    {formatVersionTimestamp(current.timestamp)})
+                  </span>
+                </div>
+                <div className='flex items-center justify-between text-sm'>
+                  <span className='text-orange-700 dark:text-orange-300'>
+                    最新版本:
+                  </span>
+                  <span className='font-mono text-orange-600 dark:text-orange-400'>
+                    v{remote.version} (构建:{' '}
+                    {formatVersionTimestamp(remote.timestamp)})
+                  </span>
+                </div>
+              </div>
+
+              {remote.releaseNotes && remote.releaseNotes.length > 0 && (
                 <div className='mb-3'>
-                  <p className='text-sm text-orange-700 dark:text-orange-300 mb-2'>
+                  <p className='text-sm text-orange-700 dark:text-orange-300 mb-2 font-medium'>
                     更新内容:
                   </p>
-                  <ul className='text-sm text-orange-600 dark:text-orange-400 space-y-1'>
+                  <ul className='text-sm text-orange-600 dark:text-orange-400 space-y-1.5'>
                     {remote.releaseNotes.map((note, index) => (
-                      <li key={index} className='flex items-center space-x-2'>
-                        <CheckCircle className='w-3 h-3 flex-shrink-0' />
+                      <li key={index} className='flex items-start space-x-2'>
+                        <CheckCircle className='w-3.5 h-3.5 flex-shrink-0 mt-0.5' />
                         <span>{note}</span>
                       </li>
                     ))}
@@ -190,26 +211,28 @@ export default function VersionChecker() {
                 </div>
               )}
 
-              <p className='text-xs text-orange-600 dark:text-orange-400'>
-                版本时间戳: {formatVersionTimestamp(remote.timestamp)}
+              <p className='text-xs text-orange-600 dark:text-orange-400 mt-2 flex items-center space-x-2'>
+                <AlertCircle className='w-3.5 h-3.5' />
+                <span>点击前往仓库查看更新详情</span>
               </p>
             </div>
 
-            {remote.downloadUrl && (
-              <a
-                href={remote.downloadUrl}
-                target='_blank'
-                rel='noopener noreferrer'
-                className='
-                  inline-flex items-center space-x-2 px-4 py-2 
-                  bg-orange-600 text-white rounded-md text-sm font-medium
-                  hover:bg-orange-700 transition-colors
-                '
-              >
-                <Download className='w-4 h-4' />
-                <span>立即更新</span>
-              </a>
-            )}
+            <a
+              href={
+                remote.downloadUrl || 'https://github.com/Decohererk/DecoTV'
+              }
+              target='_blank'
+              rel='noopener noreferrer'
+              className='
+                inline-flex items-center space-x-2 px-4 py-2 ml-4
+                bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-md text-sm font-medium
+                hover:from-orange-700 hover:to-red-700 transition-all shadow-md hover:shadow-lg
+                transform hover:scale-105
+              '
+            >
+              <Download className='w-4 h-4' />
+              <span>立即更新</span>
+            </a>
           </div>
         </div>
       )}

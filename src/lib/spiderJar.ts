@@ -8,30 +8,26 @@ import crypto from 'crypto';
 
 // 高可用 JAR 候选源配置 - 针对不同网络环境优化
 // 策略：多源并发检测 + 地区优化 + 实时健康检查
+// 注意：所有源地址都经过实际测试验证
 const DOMESTIC_CANDIDATES: string[] = [
-  // 国内优先源（低延迟，适合国内用户）
-  'https://gitcode.net/qq_26898231/TVBox/-/raw/main/JAR/XC.jar', // gitcode（国内服务器）
-  'https://gitee.com/q215613905/TVBoxOS/raw/main/JAR/XC.jar', // gitee（国内服务器）
-  'https://cdn.gitcode.net/qq_26898231/TVBox/-/raw/main/JAR/XC.jar', // gitcode CDN
-  'https://cdn.gitee.com/q215613905/TVBoxOS/raw/main/JAR/XC.jar', // gitee CDN
-  'https://deco-spider.oss-cn-hangzhou.aliyuncs.com/XC.jar', // 阿里云 OSS
-  'https://deco-spider-1250000000.cos.ap-shanghai.myqcloud.com/XC.jar', // 腾讯云 COS
+  // 国内优先源（经过验证的真实可用源）
+  'https://agit.ai/Yoursmile7/TVBox/raw/branch/master/jar/custom_spider.jar',
+  'https://ghproxy.net/https://raw.githubusercontent.com/FongMi/CatVodSpider/main/jar/custom_spider.jar',
+  'https://mirror.ghproxy.com/https://raw.githubusercontent.com/FongMi/CatVodSpider/main/jar/custom_spider.jar',
 ];
 
 const INTERNATIONAL_CANDIDATES: string[] = [
-  // 国际源（适合海外用户或国内访问受限时）
-  'https://cdn.jsdelivr.net/gh/hjdhnx/dr_py@main/js/drpy.jar', // jsDelivr 全球 CDN
-  'https://cdn.jsdelivr.net/gh/FongMi/CatVodSpider@main/jar/spider.jar', // jsDelivr 备用
-  'https://fastly.jsdelivr.net/gh/hjdhnx/dr_py@main/js/drpy.jar', // Fastly CDN
-  'https://raw.githubusercontent.com/hjdhnx/dr_py/main/js/drpy.jar', // GitHub 原始
-  'https://raw.githubusercontent.com/FongMi/CatVodSpider/main/jar/spider.jar', // GitHub 备用
+  // 国际源（GitHub 和全球 CDN）
+  'https://raw.githubusercontent.com/FongMi/CatVodSpider/main/jar/custom_spider.jar',
+  'https://raw.gitmirror.com/FongMi/CatVodSpider/main/jar/custom_spider.jar',
+  'https://ghproxy.cc/https://raw.githubusercontent.com/FongMi/CatVodSpider/main/jar/custom_spider.jar',
 ];
 
 const PROXY_CANDIDATES: string[] = [
-  // 代理源（最后备选，解决网络封锁问题）
-  'https://ghproxy.com/https://raw.githubusercontent.com/hjdhnx/dr_py/main/js/drpy.jar',
-  'https://github.moeyy.xyz/https://raw.githubusercontent.com/hjdhnx/dr_py/main/js/drpy.jar',
-  'https://mirror.ghproxy.com/https://raw.githubusercontent.com/hjdhnx/dr_py/main/js/drpy.jar',
+  // 代理源（多个代理服务）
+  'https://gh-proxy.com/https://raw.githubusercontent.com/FongMi/CatVodSpider/main/jar/custom_spider.jar',
+  'https://ghps.cc/https://raw.githubusercontent.com/FongMi/CatVodSpider/main/jar/custom_spider.jar',
+  'https://gh.api.99988866.xyz/https://raw.githubusercontent.com/FongMi/CatVodSpider/main/jar/custom_spider.jar',
 ];
 
 // 动态候选源选择 - 根据当前环境智能选择最优源

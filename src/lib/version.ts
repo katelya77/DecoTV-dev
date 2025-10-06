@@ -4,7 +4,7 @@
  */
 
 // 版本常量
-const CURRENT_SEMANTIC_VERSION = '0.2.0';
+const CURRENT_SEMANTIC_VERSION = '0.3.0';
 export const CURRENT_VERSION = CURRENT_SEMANTIC_VERSION;
 
 export interface VersionInfo {
@@ -119,7 +119,7 @@ export async function getCurrentVersionInfo(): Promise<VersionInfo> {
     };
   } catch (error) {
     // 降级处理：使用 VERSION.txt 的默认值
-    const timestamp = '20251005140531';
+    const timestamp = '20251006163200';
     return {
       version: CURRENT_VERSION,
       timestamp,
