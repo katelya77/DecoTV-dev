@@ -4,7 +4,7 @@
  */
 
 // 版本常量
-const CURRENT_SEMANTIC_VERSION = '0.3.0';
+const CURRENT_SEMANTIC_VERSION = '0.6.0';
 export const CURRENT_VERSION = CURRENT_SEMANTIC_VERSION;
 
 export interface VersionInfo {
@@ -167,6 +167,35 @@ async function fetchRemoteVersion(): Promise<string | null> {
 }
 
 /**
+ * 从远程获取语义版本号
+ */
+async function fetchRemoteSemanticVersion(): Promise<string | null> {
+  try {
+    const repoUrl =
+      'https://raw.githubusercontent.com/Decohererk/DecoTV/main/package.json';
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5秒超时
+
+    const response = await fetch(repoUrl, {
+      signal: controller.signal,
+      cache: 'no-cache',
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const packageJson = await response.json();
+    return packageJson.version || null;
+  } catch (error) {
+    // 网络错误或超时，静默处理
+    return null;
+  }
+}
+
+/**
  * 检查是否有新版本可用（基于时间戳比较）
  */
 export async function checkForUpdates(currentTimestamp: string): Promise<{
@@ -174,8 +203,11 @@ export async function checkForUpdates(currentTimestamp: string): Promise<{
   remoteVersion?: RemoteVersionInfo;
 }> {
   try {
-    // 获取远程 VERSION.txt 文件的时间戳
-    const remoteTimestamp = await fetchRemoteVersion();
+    // 同时获取远程时间戳和语义版本号
+    const [remoteTimestamp, remoteSemanticVersion] = await Promise.all([
+      fetchRemoteVersion(),
+      fetchRemoteSemanticVersion(),
+    ]);
 
     if (!remoteTimestamp) {
       return {
@@ -188,11 +220,20 @@ export async function checkForUpdates(currentTimestamp: string): Promise<{
     const hasUpdate = comparison < 0;
 
     if (hasUpdate) {
+      // 使用远程的语义版本号，如果获取失败则使用时间戳后6位
+      // 如果远程版本号已经包含 v 前缀，就不再添加
+      const displayVersion = remoteSemanticVersion
+        ? remoteSemanticVersion.startsWith('v')
+          ? remoteSemanticVersion
+          : `v${remoteSemanticVersion}`
+        : `v${CURRENT_VERSION}+${remoteTimestamp.slice(-6)}`;
+
       const remoteVersion: RemoteVersionInfo = {
-        version: `v${CURRENT_VERSION}+${remoteTimestamp.slice(-6)}`, // 显示后6位作为版本标识
+        version: displayVersion,
         timestamp: remoteTimestamp,
         releaseNotes: [
           '发现新版本可用',
+          `最新版本: ${displayVersion}`,
           `构建时间: ${formatVersionTimestamp(remoteTimestamp)}`,
           '点击前往仓库查看更新详情',
         ],

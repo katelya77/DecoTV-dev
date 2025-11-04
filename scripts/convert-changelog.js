@@ -89,19 +89,29 @@ function parseChangelog(content) {
 function generateTypeScript(changelogData) {
   const entries = changelogData.versions
     .map((version) => {
+      // 转义字符串中的特殊字符（用于单引号字符串）
+      const escapeString = (str) => {
+        return str
+          .replace(/\\/g, '\\\\')
+          .replace(/'/g, "\\'")
+          .replace(/\n/g, '\\n')
+          .replace(/\r/g, '\\r')
+          .replace(/\t/g, '\\t');
+      };
+
       const addedEntries = version.added
-        .map((entry) => `    "${entry}"`)
+        .map((entry) => `      '${escapeString(entry)}'`)
         .join(',\n');
       const changedEntries = version.changed
-        .map((entry) => `    "${entry}"`)
+        .map((entry) => `      '${escapeString(entry)}'`)
         .join(',\n');
       const fixedEntries = version.fixed
-        .map((entry) => `    "${entry}"`)
+        .map((entry) => `      '${escapeString(entry)}'`)
         .join(',\n');
 
       return `  {
-    version: "${version.version}",
-    date: "${version.date}",
+    version: '${version.version}',
+    date: '${version.date}',
     added: [
 ${addedEntries || '      // 无新增内容'}
     ],
@@ -110,7 +120,7 @@ ${changedEntries || '      // 无变更内容'}
     ],
     fixed: [
 ${fixedEntries || '      // 无修复内容'}
-    ]
+    ],
   }`;
     })
     .join(',\n');

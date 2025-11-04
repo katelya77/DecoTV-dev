@@ -3,6 +3,7 @@
 'use client';
 
 import { AlertCircle, CheckCircle } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
@@ -86,15 +87,27 @@ function LoginPageClient() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [shouldAskUsername, setShouldAskUsername] = useState(false);
+  const [registrationEnabled, setRegistrationEnabled] = useState(false);
 
   const { siteName } = useSite();
 
   // 在客户端挂载后设置配置
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const storageType = (window as any).RUNTIME_CONFIG?.STORAGE_TYPE;
-      setShouldAskUsername(storageType && storageType !== 'localstorage');
-    }
+    // 从服务端获取配置
+    fetch('/api/server-config')
+      .then((res) => res.json())
+      .then((data) => {
+        const storageType = data.StorageType;
+        setShouldAskUsername(!!storageType && storageType !== 'localstorage');
+        setRegistrationEnabled(
+          data.EnableRegistration && storageType !== 'localstorage'
+        );
+      })
+      .catch(() => {
+        // 失败时使用默认值
+        setShouldAskUsername(false);
+        setRegistrationEnabled(false);
+      });
   }, []);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -193,6 +206,18 @@ function LoginPageClient() {
           >
             {loading ? '登录中...' : '登录'}
           </button>
+
+          {/* 注册链接 */}
+          {registrationEnabled && (
+            <div className='text-center'>
+              <Link
+                href='/register'
+                className='text-sm text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 transition-colors'
+              >
+                没有账号？立即注册
+              </Link>
+            </div>
+          )}
         </form>
       </div>
 

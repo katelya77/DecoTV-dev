@@ -41,24 +41,35 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { configFile, subscriptionUrl, autoUpdate, lastCheckTime } = body;
 
-    if (!configFile || typeof configFile !== 'string') {
+    // 允许空内容，表示清空配置
+    if (configFile !== undefined && typeof configFile !== 'string') {
       return NextResponse.json(
-        { error: '配置文件内容不能为空' },
+        { error: '配置文件内容格式错误' },
         { status: 400 }
       );
     }
 
-    // 验证 JSON 格式
-    try {
-      JSON.parse(configFile);
-    } catch (e) {
-      return NextResponse.json(
-        { error: '配置文件格式错误，请检查 JSON 语法' },
-        { status: 400 }
-      );
+    // 如果不为空，验证 JSON 格式
+    if (configFile && configFile.trim()) {
+      try {
+        JSON.parse(configFile);
+      } catch (e) {
+        return NextResponse.json(
+          { error: '配置文件格式错误，请检查 JSON 语法' },
+          { status: 400 }
+        );
+      }
     }
 
-    adminConfig.ConfigFile = configFile;
+    // 如果配置文件被清空，删除所有 from='config' 的视频源（保留 from='custom'）
+    if (!configFile || !configFile.trim()) {
+      adminConfig.SourceConfig = adminConfig.SourceConfig.filter(
+        (source) => source.from === 'custom'
+      );
+      console.log('配置文件已清空，已删除所有系统预设视频源，保留自定义源');
+    }
+
+    adminConfig.ConfigFile = configFile || '';
     if (!adminConfig.ConfigSubscribtion) {
       adminConfig.ConfigSubscribtion = {
         URL: '',

@@ -29,11 +29,13 @@ import {
   ChevronDown,
   ChevronUp,
   Database,
+  Download,
   ExternalLink,
   FileText,
   FolderOpen,
   Settings,
   Tv,
+  Upload,
   Users,
   Video,
 } from 'lucide-react';
@@ -45,8 +47,8 @@ import { AdminConfig, AdminConfigResult } from '@/lib/admin.types';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 
 import DataMigration from '@/components/DataMigration';
+import ImportExportModal from '@/components/ImportExportModal';
 import PageLayout from '@/components/PageLayout';
-import VersionChecker from '@/components/VersionChecker';
 
 // 统一按钮样式系统
 const buttonStyles = {
@@ -305,6 +307,7 @@ interface DataSource {
   api: string;
   detail?: string;
   disabled?: boolean;
+  is_adult?: boolean; // 标记是否为成人资源
   from: 'config' | 'custom';
 }
 
@@ -2564,6 +2567,26 @@ const VideoSourceConfig = ({
     }>
   >([]);
 
+  // 导入导出相关状态
+  const [importExportModal, setImportExportModal] = useState<{
+    isOpen: boolean;
+    mode: 'import' | 'export' | 'result';
+    result?: {
+      success: number;
+      failed: number;
+      skipped: number;
+      details: Array<{
+        name: string;
+        key: string;
+        status: 'success' | 'failed' | 'skipped';
+        reason?: string;
+      }>;
+    };
+  }>({
+    isOpen: false,
+    mode: 'import',
+  });
+
   // dnd-kit 传感器
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -2623,7 +2646,43 @@ const VideoSourceConfig = ({
     });
   };
 
+  const handleToggleAdult = (key: string) => {
+    const target = sources.find((s) => s.key === key);
+    if (!target) return;
+    const newAdultStatus = !target.is_adult;
+
+    withLoading(`toggleAdult_${key}`, () =>
+      callSourceApi({
+        action: 'update_adult',
+        key,
+        is_adult: newAdultStatus,
+      })
+    ).catch(() => {
+      console.error('切换成人标记失败', key);
+    });
+  };
+
   const handleDelete = (key: string) => {
+    const target = sources.find((s) => s.key === key);
+    if (!target) return;
+
+    // 检查是否是系统预设源
+    if (target.from === 'config') {
+      showAlert({
+        type: 'warning',
+        title: '无法删除系统预设源',
+        message:
+          `❌ "${target.name}" 是系统预设源（from=config），无法直接删除。\n\n` +
+          `💡 此源来自「配置文件」标签页中的 JSON 配置。\n\n` +
+          `如需删除，请：\n` +
+          `1. 前往「配置文件」标签页\n` +
+          `2. 修改或清空配置文件内容\n` +
+          `3. 保存后即可删除对应的系统预设源\n\n` +
+          `⚠️ 只有手动添加的自定义源可以直接删除。`,
+      });
+      return;
+    }
+
     withLoading(`deleteSource_${key}`, () =>
       callSourceApi({ action: 'delete', key })
     ).catch(() => {
@@ -2640,6 +2699,7 @@ const VideoSourceConfig = ({
         name: newSource.name,
         api: newSource.api,
         detail: newSource.detail,
+        is_adult: newSource.is_adult || false,
       });
       setNewSource({
         name: '',
@@ -2647,6 +2707,7 @@ const VideoSourceConfig = ({
         api: '',
         detail: '',
         disabled: false,
+        is_adult: false,
         from: 'custom',
       });
       setShowAddForm(false);
@@ -2675,6 +2736,54 @@ const VideoSourceConfig = ({
       .catch(() => {
         console.error('操作失败', 'sort', order);
       });
+  };
+
+  // 批量标记/取消标记成人资源
+  const handleBatchMarkAdult = async (markAsAdult: boolean) => {
+    if (selectedSources.size === 0) {
+      showAlert({
+        type: 'warning',
+        title: '请先选择要操作的视频源',
+        message: '请选择至少一个视频源',
+      });
+      return;
+    }
+
+    const keys = Array.from(selectedSources);
+    const loadingKey = markAsAdult
+      ? 'batchSource_mark_adult'
+      : 'batchSource_unmark_adult';
+
+    try {
+      await withLoading(loadingKey, async () => {
+        // 逐个更新成人标记
+        for (const key of keys) {
+          await callSourceApi({
+            action: 'update_adult',
+            key,
+            is_adult: markAsAdult,
+          });
+        }
+      });
+
+      showAlert({
+        type: 'success',
+        title: markAsAdult ? '批量标记成功' : '批量取消标记成功',
+        message: `已${markAsAdult ? '标记' : '取消标记'} ${
+          keys.length
+        } 个视频源`,
+        timer: 3000,
+      });
+
+      // 重置选择状态
+      setSelectedSources(new Set());
+    } catch (err) {
+      showAlert({
+        type: 'error',
+        title: markAsAdult ? '批量标记失败' : '批量取消标记失败',
+        message: err instanceof Error ? err.message : '操作失败',
+      });
+    }
   };
 
   // 有效性检测函数
@@ -2858,6 +2967,220 @@ const VideoSourceConfig = ({
     }
   };
 
+  // 导出视频源
+  const handleExportSources = (exportFormat: 'array' | 'config' = 'array') => {
+    try {
+      // 获取要导出的源（如果有选中则导出选中的，否则导出全部）
+      const sourcesToExport =
+        selectedSources.size > 0
+          ? sources.filter((s) => selectedSources.has(s.key))
+          : sources;
+
+      if (sourcesToExport.length === 0) {
+        showAlert({
+          type: 'warning',
+          title: '没有可导出的视频源',
+          message: '请先添加视频源或选择要导出的视频源',
+        });
+        return;
+      }
+
+      let exportData: any;
+      let filename: string;
+      const now = new Date();
+      const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+      if (exportFormat === 'config') {
+        // 配置文件格式: { api_site: { key: { name, api, detail, is_adult } } }
+        const apiSiteObj: Record<
+          string,
+          {
+            name: string;
+            api: string;
+            detail?: string;
+            is_adult?: boolean;
+          }
+        > = {};
+
+        sourcesToExport.forEach((source) => {
+          apiSiteObj[source.key] = {
+            name: source.name,
+            api: source.api,
+          };
+          if (source.detail) {
+            apiSiteObj[source.key].detail = source.detail;
+          }
+          if (source.is_adult) {
+            apiSiteObj[source.key].is_adult = source.is_adult;
+          }
+        });
+
+        exportData = {
+          api_site: apiSiteObj,
+        };
+        filename = `config_${timestamp}.json`;
+      } else {
+        // 数组格式（用于导入功能）
+        exportData = sourcesToExport.map((source) => ({
+          name: source.name,
+          key: source.key,
+          api: source.api,
+          detail: source.detail || '',
+          disabled: source.disabled || false,
+          is_adult: source.is_adult || false,
+        }));
+        filename = `video_sources_${timestamp}.json`;
+      }
+
+      // 创建下载
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      const formatText =
+        exportFormat === 'config' ? '配置文件格式' : '数组格式';
+      showAlert({
+        type: 'success',
+        title: '导出成功',
+        message: `已导出 ${sourcesToExport.length} 个视频源（${formatText}）到 ${filename}`,
+        timer: 3000,
+      });
+
+      // 关闭模态框
+      setImportExportModal({ isOpen: false, mode: 'export' });
+    } catch (err) {
+      showAlert({
+        type: 'error',
+        title: '导出失败',
+        message: err instanceof Error ? err.message : '未知错误',
+      });
+    }
+  };
+
+  // 导入视频源
+  const handleImportSources = async (
+    file: File,
+    onProgress?: (current: number, total: number) => void
+  ) => {
+    try {
+      const text = await file.text();
+      const importData = JSON.parse(text);
+
+      if (!Array.isArray(importData)) {
+        throw new Error('JSON 格式错误：应为数组格式');
+      }
+
+      const result = {
+        success: 0,
+        failed: 0,
+        skipped: 0,
+        details: [] as Array<{
+          name: string;
+          key: string;
+          status: 'success' | 'failed' | 'skipped';
+          reason?: string;
+        }>,
+      };
+
+      const total = importData.length;
+
+      // 逐个导入，并更新进度
+      for (let i = 0; i < importData.length; i++) {
+        const item = importData[i];
+
+        // 更新进度
+        if (onProgress) {
+          onProgress(i + 1, total);
+        }
+        try {
+          // 验证必要字段
+          if (!item.name || !item.key || !item.api) {
+            result.failed++;
+            result.details.push({
+              name: item.name || '未知',
+              key: item.key || '未知',
+              status: 'failed',
+              reason: '缺少必要字段（name、key 或 api）',
+            });
+            continue;
+          }
+
+          // 检查是否已存在
+          const exists = sources.find((s) => s.key === item.key);
+          if (exists) {
+            result.skipped++;
+            result.details.push({
+              name: item.name,
+              key: item.key,
+              status: 'skipped',
+              reason: '该 key 已存在，跳过导入',
+            });
+            continue;
+          }
+
+          // 导入
+          await callSourceApi({
+            action: 'add',
+            key: item.key,
+            name: item.name,
+            api: item.api,
+            detail: item.detail || '',
+            is_adult: item.is_adult || false,
+          });
+
+          result.success++;
+          result.details.push({
+            name: item.name,
+            key: item.key,
+            status: 'success',
+          });
+        } catch (err) {
+          result.failed++;
+          result.details.push({
+            name: item.name,
+            key: item.key,
+            status: 'failed',
+            reason: err instanceof Error ? err.message : '导入失败',
+          });
+        }
+      }
+
+      // 显示结果
+      setImportExportModal({
+        isOpen: true,
+        mode: 'result',
+        result,
+      });
+
+      // 如果有成功导入的，刷新配置
+      if (result.success > 0) {
+        await refreshConfig();
+      }
+    } catch (err) {
+      showAlert({
+        type: 'error',
+        title: '导入失败',
+        message: err instanceof Error ? err.message : '文件解析失败',
+      });
+      setImportExportModal({ isOpen: false, mode: 'import' });
+    }
+
+    return {
+      success: 0,
+      failed: 0,
+      skipped: 0,
+      details: [],
+    };
+  };
+
   // 获取有效性状态显示
   const getValidationStatus = (sourceKey: string) => {
     const result = validationResults.find((r) => r.key === sourceKey);
@@ -2934,7 +3257,17 @@ const VideoSourceConfig = ({
           />
         </td>
         <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100'>
-          {source.name}
+          <div className='flex items-center space-x-2'>
+            <span>{source.name}</span>
+            {source.from === 'config' && (
+              <span
+                className='px-1.5 py-0.5 text-[10px] font-medium rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
+                title='系统预设源，不可删除'
+              >
+                预设
+              </span>
+            )}
+          </div>
         </td>
         <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100'>
           {source.key}
@@ -2961,6 +3294,28 @@ const VideoSourceConfig = ({
           >
             {!source.disabled ? '启用中' : '已禁用'}
           </span>
+        </td>
+        <td className='px-6 py-4 whitespace-nowrap text-center'>
+          <button
+            onClick={() => handleToggleAdult(source.key)}
+            disabled={isLoading(`toggleAdult_${source.key}`)}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${
+              source.is_adult
+                ? 'bg-gradient-to-r from-red-500 to-pink-500'
+                : 'bg-gray-300 dark:bg-gray-600'
+            } ${
+              isLoading(`toggleAdult_${source.key}`)
+                ? 'opacity-50 cursor-not-allowed'
+                : 'cursor-pointer hover:opacity-80'
+            }`}
+            title={source.is_adult ? '成人资源' : '普通资源'}
+          >
+            <span
+              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                source.is_adult ? 'translate-x-5' : 'translate-x-0.5'
+              }`}
+            />
+          </button>
         </td>
         <td className='px-6 py-4 whitespace-nowrap max-w-[1rem]'>
           {(() => {
@@ -3059,19 +3414,51 @@ const VideoSourceConfig = ({
     let confirmMessage = '';
     let actionName = '';
 
-    switch (action) {
-      case 'batch_enable':
-        confirmMessage = `确定要启用选中的 ${keys.length} 个视频源吗？`;
-        actionName = '批量启用';
-        break;
-      case 'batch_disable':
-        confirmMessage = `确定要禁用选中的 ${keys.length} 个视频源吗？`;
-        actionName = '批量禁用';
-        break;
-      case 'batch_delete':
-        confirmMessage = `确定要删除选中的 ${keys.length} 个视频源吗？此操作不可恢复！`;
-        actionName = '批量删除';
-        break;
+    // 对于批量删除，检查哪些是可以删除的（from='custom'）
+    if (action === 'batch_delete') {
+      const deletableSources = sources.filter(
+        (s) => selectedSources.has(s.key) && s.from === 'custom'
+      );
+      const undeletableSources = sources.filter(
+        (s) => selectedSources.has(s.key) && s.from !== 'custom'
+      );
+
+      if (deletableSources.length === 0) {
+        showAlert({
+          type: 'warning',
+          title: '无法删除',
+          message:
+            '❌ 选中的视频源都是系统预设源（from=config），无法删除。\n\n' +
+            '💡 这些源来自「配置文件」标签页中的 JSON 配置。\n\n' +
+            '如需删除，请：\n' +
+            '1. 前往「配置文件」标签页\n' +
+            '2. 修改或清空配置文件内容\n' +
+            '3. 保存后即可删除对应的系统预设源\n\n' +
+            '⚠️ 只有手动添加的自定义源可以直接删除。',
+        });
+        return;
+      }
+
+      if (undeletableSources.length > 0) {
+        confirmMessage =
+          `将删除 ${deletableSources.length} 个自定义源。\n\n` +
+          `⚠️ 注意：以下 ${undeletableSources.length} 个系统预设源无法删除（需在配置文件中修改）：\n` +
+          `${undeletableSources.map((s) => `• ${s.name}`).join('\n')}`;
+      } else {
+        confirmMessage = `确定要删除选中的 ${deletableSources.length} 个自定义视频源吗？\n\n此操作不可恢复！`;
+      }
+      actionName = '批量删除';
+    } else {
+      switch (action) {
+        case 'batch_enable':
+          confirmMessage = `确定要启用选中的 ${keys.length} 个视频源吗？`;
+          actionName = '批量启用';
+          break;
+        case 'batch_disable':
+          confirmMessage = `确定要禁用选中的 ${keys.length} 个视频源吗？`;
+          actionName = '批量禁用';
+          break;
+      }
     }
 
     // 显示确认弹窗
@@ -3084,12 +3471,43 @@ const VideoSourceConfig = ({
           await withLoading(`batchSource_${action}`, () =>
             callSourceApi({ action, keys })
           );
-          showAlert({
-            type: 'success',
-            title: `${actionName}成功`,
-            message: `${actionName}了 ${keys.length} 个视频源`,
-            timer: 2000,
-          });
+
+          // 对于删除操作，显示实际删除的数量
+          if (action === 'batch_delete') {
+            const deletableCount = sources.filter(
+              (s) => selectedSources.has(s.key) && s.from === 'custom'
+            ).length;
+            const undeletableCount = sources.filter(
+              (s) => selectedSources.has(s.key) && s.from !== 'custom'
+            ).length;
+
+            if (undeletableCount > 0) {
+              showAlert({
+                type: 'warning',
+                title: `部分删除成功`,
+                message:
+                  `✅ 成功删除了 ${deletableCount} 个自定义视频源\n` +
+                  `⚠️ 跳过了 ${undeletableCount} 个系统预设源\n\n` +
+                  `💡 提示：系统预设源需要在「配置文件」中修改`,
+                timer: 5000,
+              });
+            } else {
+              showAlert({
+                type: 'success',
+                title: `${actionName}成功`,
+                message: `✅ 成功删除了 ${deletableCount} 个自定义视频源`,
+                timer: 2000,
+              });
+            }
+          } else {
+            showAlert({
+              type: 'success',
+              title: `${actionName}成功`,
+              message: `${actionName}了 ${keys.length} 个视频源`,
+              timer: 2000,
+            });
+          }
+
           // 重置选择状态
           setSelectedSources(new Set());
         } catch (err) {
@@ -3129,6 +3547,36 @@ const VideoSourceConfig = ({
 
   return (
     <div className='space-y-6'>
+      {/* 说明提示区域 */}
+      {sources.some((s) => s.from === 'config') && (
+        <div className='bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4'>
+          <div className='flex items-start space-x-3'>
+            <div className='flex-shrink-0 mt-0.5'>
+              <svg
+                className='w-5 h-5 text-blue-600 dark:text-blue-400'
+                fill='currentColor'
+                viewBox='0 0 20 20'
+              >
+                <path
+                  fillRule='evenodd'
+                  d='M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z'
+                  clipRule='evenodd'
+                />
+              </svg>
+            </div>
+            <div className='flex-1'>
+              <h4 className='text-sm font-medium text-blue-900 dark:text-blue-200 mb-1'>
+                💡 关于系统预设源
+              </h4>
+              <p className='text-xs text-blue-800 dark:text-blue-300'>
+                标记为「预设」的视频源来自「配置文件」标签页，无法直接删除。如需删除，请在「配置文件」中修改或清空
+                JSON 配置后保存。
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 添加视频源表单 */}
       <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4'>
         <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
@@ -3184,11 +3632,70 @@ const VideoSourceConfig = ({
                     ? '删除中...'
                     : '批量删除'}
                 </button>
+                <button
+                  onClick={() => handleBatchMarkAdult(true)}
+                  disabled={isLoading('batchSource_mark_adult')}
+                  className={`px-3 py-1 text-sm rounded-lg transition-colors flex items-center space-x-1 ${
+                    isLoading('batchSource_mark_adult')
+                      ? 'bg-gray-400 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white'
+                  }`}
+                  title='将选中的视频源标记为成人资源'
+                >
+                  <span className='text-base'>🔞</span>
+                  {isLoading('batchSource_mark_adult')
+                    ? '标记中...'
+                    : '标记成人'}
+                </button>
+                <button
+                  onClick={() => handleBatchMarkAdult(false)}
+                  disabled={isLoading('batchSource_unmark_adult')}
+                  className={`px-3 py-1 text-sm ${
+                    isLoading('batchSource_unmark_adult')
+                      ? buttonStyles.disabled
+                      : buttonStyles.secondary
+                  }`}
+                  title='将选中的视频源标记为普通资源'
+                >
+                  {isLoading('batchSource_unmark_adult')
+                    ? '取消中...'
+                    : '取消标记'}
+                </button>
               </div>
               <div className='hidden sm:block w-px h-6 bg-gray-300 dark:bg-gray-600 order-2'></div>
             </>
           )}
           <div className='flex items-center gap-2 order-1 sm:order-2'>
+            <button
+              onClick={() =>
+                setImportExportModal({ isOpen: true, mode: 'import' })
+              }
+              className='px-3 py-1 text-sm rounded-lg transition-colors flex items-center space-x-1 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 text-white'
+              title='从 JSON 文件导入视频源'
+            >
+              <Upload className='w-4 h-4' />
+              <span className='hidden sm:inline'>导入视频源</span>
+              <span className='sm:hidden'>导入</span>
+            </button>
+            <button
+              onClick={() =>
+                setImportExportModal({ isOpen: true, mode: 'export' })
+              }
+              className='px-3 py-1 text-sm rounded-lg transition-colors flex items-center space-x-1 bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-700 hover:to-emerald-600 text-white'
+              title={
+                selectedSources.size > 0
+                  ? `导出选中的 ${selectedSources.size} 个视频源`
+                  : '导出所有视频源'
+              }
+            >
+              <Download className='w-4 h-4' />
+              <span className='hidden sm:inline'>
+                {selectedSources.size > 0
+                  ? `导出已选(${selectedSources.size})`
+                  : '导出视频源'}
+              </span>
+              <span className='sm:hidden'>导出</span>
+            </button>
             <button
               onClick={() => setShowValidationModal(true)}
               disabled={isValidating}
@@ -3246,9 +3753,17 @@ const VideoSourceConfig = ({
               type='text'
               placeholder='名称'
               value={newSource.name}
-              onChange={(e) =>
-                setNewSource((prev) => ({ ...prev, name: e.target.value }))
-              }
+              onChange={(e) => {
+                const name = e.target.value;
+                setNewSource((prev) => ({
+                  ...prev,
+                  name,
+                  // 智能检测:如果名称以 AV-、成人、伦理 等开头,自动标记为成人资源
+                  is_adult:
+                    /^(AV-|成人|伦理|福利|里番|R18)/i.test(name) ||
+                    prev.is_adult,
+                }));
+              }}
               className='px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100'
             />
             <input
@@ -3279,6 +3794,38 @@ const VideoSourceConfig = ({
               className='px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100'
             />
           </div>
+
+          {/* 成人资源标记 */}
+          <div className='flex items-center justify-between p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700'>
+            <div className='flex items-center space-x-2'>
+              <span className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                标记为成人资源
+              </span>
+              {newSource.is_adult && (
+                <span className='px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'>
+                  🔞 成人
+                </span>
+              )}
+            </div>
+            <button
+              type='button'
+              onClick={() =>
+                setNewSource((prev) => ({ ...prev, is_adult: !prev.is_adult }))
+              }
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                newSource.is_adult
+                  ? 'bg-gradient-to-r from-red-500 to-pink-500'
+                  : 'bg-gray-300 dark:bg-gray-600'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  newSource.is_adult ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+
           <div className='flex justify-end'>
             <button
               onClick={handleAddSource}
@@ -3334,6 +3881,9 @@ const VideoSourceConfig = ({
               </th>
               <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
                 状态
+              </th>
+              <th className='px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                成人资源
               </th>
               <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
                 有效性
@@ -3445,6 +3995,16 @@ const VideoSourceConfig = ({
         showConfirm={alertModal.showConfirm}
       />
 
+      {/* 导入导出模态框 */}
+      <ImportExportModal
+        isOpen={importExportModal.isOpen}
+        mode={importExportModal.mode}
+        onClose={() => setImportExportModal({ isOpen: false, mode: 'import' })}
+        onImport={handleImportSources}
+        onExport={handleExportSources}
+        result={importExportModal.result}
+      />
+
       {/* 批量操作确认弹窗 */}
       {confirmModal.isOpen &&
         createPortal(
@@ -3482,7 +4042,7 @@ const VideoSourceConfig = ({
                 </div>
 
                 <div className='mb-6'>
-                  <p className='text-sm text-gray-600 dark:text-gray-400'>
+                  <p className='text-sm text-gray-600 dark:text-gray-400 whitespace-pre-line'>
                     {confirmModal.message}
                   </p>
                 </div>
@@ -3977,6 +4537,30 @@ const ConfigFileComponent = ({
 
   // 保存配置文件
   const handleSave = async () => {
+    // 检查是否要清空配置
+    const isEmpty = !configContent || !configContent.trim();
+
+    if (isEmpty) {
+      // 统计将被删除的系统预设源数量
+      const configSources =
+        config?.SourceConfig?.filter((s) => s.from === 'config') || [];
+
+      if (configSources.length > 0) {
+        // 需要用户确认清空操作
+        const confirmed = confirm(
+          `⚠️ 清空配置文件警告\n\n` +
+            `你正在清空配置文件，这将会：\n` +
+            `• 删除 ${configSources.length} 个系统预设视频源\n` +
+            `• 保留所有自定义添加的视频源\n\n` +
+            `确定要继续吗？`
+        );
+
+        if (!confirmed) {
+          return;
+        }
+      }
+    }
+
     await withLoading('saveConfig', async () => {
       try {
         const resp = await fetch('/api/admin/config_file', {
@@ -3995,7 +4579,19 @@ const ConfigFileComponent = ({
           throw new Error(data.error || `保存失败: ${resp.status}`);
         }
 
-        showSuccess('配置文件保存成功', showAlert);
+        if (
+          isEmpty &&
+          (config?.SourceConfig?.filter((s) => s.from === 'config').length ??
+            0) > 0
+        ) {
+          showSuccess(
+            '配置文件已清空，系统预设视频源已删除，自定义源已保留',
+            showAlert
+          );
+        } else {
+          showSuccess('配置文件保存成功', showAlert);
+        }
+
         await refreshConfig();
       } catch (err) {
         showError(err instanceof Error ? err.message : '保存失败', showAlert);
@@ -4612,11 +5208,11 @@ const SiteConfigComponent = ({
         />
       </div>
 
-      {/* 禁用黄色过滤器 */}
+      {/* 成人内容过滤 */}
       <div>
         <div className='flex items-center justify-between'>
           <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
-            禁用黄色过滤器
+            启用成人内容过滤
           </label>
           <button
             type='button'
@@ -4627,7 +5223,7 @@ const SiteConfigComponent = ({
               }))
             }
             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 ${
-              siteSettings.DisableYellowFilter
+              !siteSettings.DisableYellowFilter
                 ? buttonStyles.toggleOn
                 : buttonStyles.toggleOff
             }`}
@@ -4636,7 +5232,7 @@ const SiteConfigComponent = ({
               className={`inline-block h-4 w-4 transform rounded-full ${
                 buttonStyles.toggleThumb
               } transition-transform ${
-                siteSettings.DisableYellowFilter
+                !siteSettings.DisableYellowFilter
                   ? buttonStyles.toggleThumbOn
                   : buttonStyles.toggleThumbOff
               }`}
@@ -4644,7 +5240,7 @@ const SiteConfigComponent = ({
           </button>
         </div>
         <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
-          禁用黄色内容的过滤功能，允许显示所有内容。
+          开启后将过滤标记为成人资源的视频源和包含敏感关键词的内容。关闭后显示所有内容。
         </p>
       </div>
 
@@ -5719,6 +6315,61 @@ function AdminPageClient() {
               onToggle={() => toggleTab('tvboxConfig')}
             >
               <div className='space-y-4 p-4'>
+                {/* 成人内容过滤提示卡片 */}
+                <div className='bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-lg p-4 border border-purple-200 dark:border-purple-700'>
+                  <div className='flex items-start space-x-3'>
+                    <div className='flex-shrink-0'>
+                      <div className='w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center'>
+                        <span className='text-white text-xl'>🔒</span>
+                      </div>
+                    </div>
+                    <div className='flex-1'>
+                      <h4 className='text-sm font-semibold text-purple-900 dark:text-purple-100 mb-2'>
+                        💡 成人内容过滤功能
+                      </h4>
+                      <p className='text-xs text-purple-800 dark:text-purple-200 mb-3'>
+                        支持通过 URL 参数灵活控制成人内容过滤，无需修改配置！
+                      </p>
+
+                      {/* 快速示例 */}
+                      <div className='space-y-2 mb-3'>
+                        <div className='flex items-center space-x-2'>
+                          <span className='text-xs font-medium text-purple-700 dark:text-purple-300'>
+                            🏠 家庭模式：
+                          </span>
+                          <code className='text-xs bg-white dark:bg-gray-800 px-2 py-1 rounded border border-purple-200 dark:border-purple-600 text-purple-600 dark:text-purple-300'>
+                            /api/tvbox/config
+                          </code>
+                        </div>
+                        <div className='flex items-center space-x-2'>
+                          <span className='text-xs font-medium text-purple-700 dark:text-purple-300'>
+                            🔓 完整模式：
+                          </span>
+                          <code className='text-xs bg-white dark:bg-gray-800 px-2 py-1 rounded border border-purple-200 dark:border-purple-600 text-purple-600 dark:text-purple-300'>
+                            /api/tvbox/config?filter=off
+                          </code>
+                        </div>
+                      </div>
+
+                      {/* 查看详细指南按钮 */}
+                      <div className='flex items-center space-x-2'>
+                        <a
+                          href='https://github.com/Decohererk/DecoTV/blob/main/docs/%E6%88%90%E4%BA%BA%E5%86%85%E5%AE%B9%E8%BF%87%E6%BB%A4%E4%BD%BF%E7%94%A8%E6%8C%87%E5%8D%97.md'
+                          target='_blank'
+                          rel='noopener noreferrer'
+                          className='inline-flex items-center space-x-1 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white text-xs font-medium rounded-md transition-all transform hover:scale-105 shadow-sm'
+                        >
+                          <span>📖</span>
+                          <span>查看完整指南</span>
+                        </a>
+                        <span className='text-xs text-purple-600 dark:text-purple-400'>
+                          适用于 OrionTV 和 TVBox
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <div className='text-sm text-gray-600 dark:text-gray-300'>
                   TVBox 订阅地址已为你生成，支持标准 TVBox/猫影视格式。可在
                   TVBox、猫影视、EasyBox 等应用中添加为订阅源：
@@ -5897,6 +6548,129 @@ function AdminPageClient() {
                   </button>
                 </div>
 
+                {/* 成人内容过滤快捷开关 */}
+                <div className='bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3 border border-gray-200 dark:border-gray-700'>
+                  <div className='flex items-center justify-between mb-2'>
+                    <div className='flex items-center space-x-2'>
+                      <span className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                        🔒 成人内容过滤
+                      </span>
+                      <span className='text-xs text-gray-500 dark:text-gray-400'>
+                        （一键复制不同模式的配置链接）
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className='grid grid-cols-1 sm:grid-cols-2 gap-2'>
+                    {/* 家庭安全模式 */}
+                    <button
+                      onClick={() => {
+                        const baseUrl = getTvboxConfigUrl().split('?')[0];
+                        navigator.clipboard.writeText(baseUrl);
+                        showAlert({
+                          type: 'success',
+                          title: '复制成功',
+                          message: '已复制家庭安全模式链接（默认过滤成人内容）',
+                          timer: 2000,
+                        });
+                      }}
+                      className='flex items-center justify-between px-3 py-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-md hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors group'
+                    >
+                      <div className='flex items-center space-x-2'>
+                        <span className='text-lg'>🏠</span>
+                        <div className='text-left'>
+                          <div className='text-xs font-medium text-green-700 dark:text-green-300'>
+                            家庭安全模式
+                          </div>
+                          <div className='text-xs text-green-600 dark:text-green-400'>
+                            过滤成人内容
+                          </div>
+                        </div>
+                      </div>
+                      <div className='opacity-0 group-hover:opacity-100 transition-opacity'>
+                        <svg
+                          className='w-4 h-4 text-green-600 dark:text-green-400'
+                          fill='none'
+                          stroke='currentColor'
+                          viewBox='0 0 24 24'
+                        >
+                          <path
+                            strokeLinecap='round'
+                            strokeLinejoin='round'
+                            strokeWidth={2}
+                            d='M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z'
+                          />
+                        </svg>
+                      </div>
+                    </button>
+
+                    {/* 完整内容模式 */}
+                    <button
+                      onClick={() => {
+                        const baseUrl = getTvboxConfigUrl().split('?')[0];
+                        const fullUrl = `${baseUrl}?filter=off`;
+                        navigator.clipboard.writeText(fullUrl);
+                        showAlert({
+                          type: 'success',
+                          title: '复制成功',
+                          message: '已复制完整内容模式链接（显示所有内容）',
+                          timer: 2000,
+                        });
+                      }}
+                      className='flex items-center justify-between px-3 py-2 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-md hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors group'
+                    >
+                      <div className='flex items-center space-x-2'>
+                        <span className='text-lg'>🔓</span>
+                        <div className='text-left'>
+                          <div className='text-xs font-medium text-orange-700 dark:text-orange-300'>
+                            完整内容模式
+                          </div>
+                          <div className='text-xs text-orange-600 dark:text-orange-400'>
+                            显示所有内容
+                          </div>
+                        </div>
+                      </div>
+                      <div className='opacity-0 group-hover:opacity-100 transition-opacity'>
+                        <svg
+                          className='w-4 h-4 text-orange-600 dark:text-orange-400'
+                          fill='none'
+                          stroke='currentColor'
+                          viewBox='0 0 24 24'
+                        >
+                          <path
+                            strokeLinecap='round'
+                            strokeLinejoin='round'
+                            strokeWidth={2}
+                            d='M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z'
+                          />
+                        </svg>
+                      </div>
+                    </button>
+                  </div>
+
+                  {/* 额外说明 */}
+                  <div className='mt-2 flex items-start space-x-2'>
+                    <svg
+                      className='w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5'
+                      fill='currentColor'
+                      viewBox='0 0 20 20'
+                    >
+                      <path
+                        fillRule='evenodd'
+                        d='M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z'
+                        clipRule='evenodd'
+                      />
+                    </svg>
+                    <p className='text-xs text-gray-600 dark:text-gray-400'>
+                      默认使用智能搜索代理，如需直连原始 API 可添加{' '}
+                      <code className='px-1 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs'>
+                        ?proxy=off
+                      </code>{' '}
+                      参数
+                    </p>
+                  </div>
+                </div>
+
                 {/* 连通性体检区域 */}
                 <div className='space-y-3'>
                   <div className='flex items-center justify-between'>
@@ -5991,16 +6765,6 @@ function AdminPageClient() {
                       </div>
                     </div>
                   )}
-                </div>
-
-                {/* 版本检查器 */}
-                <div className='space-y-3 pt-4 border-t border-gray-200 dark:border-gray-700'>
-                  <div className='flex items-center mb-3'>
-                    <span className='text-sm font-medium text-gray-700 dark:text-gray-300'>
-                      版本信息与更新检查：
-                    </span>
-                  </div>
-                  <VersionChecker />
                 </div>
 
                 {/* JAR 状态监控区域 */}

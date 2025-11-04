@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getAvailableApiSites, getConfig } from '@/lib/config';
 import { searchFromApi } from '@/lib/downstream';
+import { rankSearchResults } from '@/lib/search-ranking';
 import { yellowWords } from '@/lib/yellow';
 
 export const runtime = 'nodejs';
@@ -19,15 +20,12 @@ export async function GET(request: NextRequest) {
   const query = searchParams.get('q');
 
   if (!query) {
-    return new Response(
-      JSON.stringify({ error: '搜索关键词不能为空' }),
-      {
-        status: 400,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      }
-    );
+    return new Response(JSON.stringify({ error: '搜索关键词不能为空' }), {
+      status: 400,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
   }
 
   const config = await getConfig();
@@ -44,7 +42,10 @@ export async function GET(request: NextRequest) {
       // 辅助函数：安全地向控制器写入数据
       const safeEnqueue = (data: Uint8Array) => {
         try {
-          if (streamClosed || (!controller.desiredSize && controller.desiredSize !== 0)) {
+          if (
+            streamClosed ||
+            (!controller.desiredSize && controller.desiredSize !== 0)
+          ) {
             // 流已标记为关闭或控制器已关闭
             return false;
           }
@@ -63,7 +64,7 @@ export async function GET(request: NextRequest) {
         type: 'start',
         query,
         totalSources: apiSites.length,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       })}\n\n`;
 
       if (!safeEnqueue(encoder.encode(startEvent))) {
@@ -85,16 +86,26 @@ export async function GET(request: NextRequest) {
             ),
           ]);
 
-          const results = await searchPromise as any[];
+          const results = (await searchPromise) as any[];
 
-          // 过滤黄色内容
+          // 成人内容过滤
           let filteredResults = results;
           if (!config.SiteConfig.DisableYellowFilter) {
             filteredResults = results.filter((result) => {
               const typeName = result.type_name || '';
-              return !yellowWords.some((word: string) => typeName.includes(word));
+              // 检查源是否标记为成人资源
+              if (site.is_adult) {
+                return false;
+              }
+              // 检查分类名称关键词
+              return !yellowWords.some((word: string) =>
+                typeName.includes(word)
+              );
             });
           }
+
+          // 🎯 智能排序：按相关性对该源的结果排序
+          filteredResults = rankSearchResults(filteredResults, query);
 
           // 发送该源的搜索结果
           completedSources++;
@@ -105,7 +116,7 @@ export async function GET(request: NextRequest) {
               source: site.key,
               sourceName: site.name,
               results: filteredResults,
-              timestamp: Date.now()
+              timestamp: Date.now(),
             })}\n\n`;
 
             if (!safeEnqueue(encoder.encode(sourceEvent))) {
@@ -117,7 +128,6 @@ export async function GET(request: NextRequest) {
           if (filteredResults.length > 0) {
             allResults.push(...filteredResults);
           }
-
         } catch (error) {
           console.warn(`搜索失败 ${site.name}:`, error);
 
@@ -130,7 +140,7 @@ export async function GET(request: NextRequest) {
               source: site.key,
               sourceName: site.name,
               error: error instanceof Error ? error.message : '搜索失败',
-              timestamp: Date.now()
+              timestamp: Date.now(),
             })}\n\n`;
 
             if (!safeEnqueue(encoder.encode(errorEvent))) {
@@ -148,7 +158,7 @@ export async function GET(request: NextRequest) {
               type: 'complete',
               totalResults: allResults.length,
               completedSources,
-              timestamp: Date.now()
+              timestamp: Date.now(),
             })}\n\n`;
 
             if (safeEnqueue(encoder.encode(completeEvent))) {
@@ -179,7 +189,7 @@ export async function GET(request: NextRequest) {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
+      Connection: 'keep-alive',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET',
       'Access-Control-Allow-Headers': 'Content-Type',
