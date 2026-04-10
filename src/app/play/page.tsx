@@ -407,6 +407,34 @@ function sanitizeDanmukuSettings(raw: unknown): DanmukuSettings {
   };
 }
 
+function normalizeYearForMatch(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (
+    !normalized ||
+    normalized === 'unknown' ||
+    normalized === '0' ||
+    normalized === 'null' ||
+    normalized === 'undefined'
+  ) {
+    return '';
+  }
+
+  const matchedYear = normalized.match(/\d{4}/)?.[0];
+  return matchedYear || '';
+}
+
+function matchesRequestedYear(
+  resultYear: string,
+  requestedYear: string,
+): boolean {
+  const normalizedRequestedYear = normalizeYearForMatch(requestedYear);
+  if (!normalizedRequestedYear) {
+    return true;
+  }
+
+  return normalizeYearForMatch(resultYear) === normalizedRequestedYear;
+}
+
 /**
  * 从 localStorage 读取弹幕播放器偏好
  * @returns 合并默认值后的弹幕设置
@@ -2149,9 +2177,7 @@ function PlayPageClient() {
           (result: SearchResult) =>
             result.title.replaceAll(' ', '').toLowerCase() ===
               videoTitleRef.current.replaceAll(' ', '').toLowerCase() &&
-            (videoYearRef.current
-              ? result.year.toLowerCase() === videoYearRef.current.toLowerCase()
-              : true) &&
+            matchesRequestedYear(result.year || '', videoYearRef.current) &&
             (searchType
               ? (searchType === 'tv' && result.episodes.length > 1) ||
                 (searchType === 'movie' && result.episodes.length === 1)
