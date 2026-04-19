@@ -562,6 +562,14 @@ function SearchPageClient() {
     }
   }, [aggregatedResults, filterAgg, searchQuery]);
 
+  const displayedResultCount = useMemo(() => {
+    if (viewMode === 'agg') {
+      return Array.isArray(filteredAggResults) ? filteredAggResults.length : 0;
+    }
+
+    return Array.isArray(filteredAllResults) ? filteredAllResults.length : 0;
+  }, [filteredAggResults, filteredAllResults, viewMode]);
+
   useEffect(() => {
     // 无搜索参数时聚焦搜索框
     !searchParams.get('q') && document.getElementById('searchInput')?.focus();
@@ -688,6 +696,46 @@ function SearchPageClient() {
       setUseFluidSearch(currentFluidSearch);
     }
 
+    const fetchCanonicalSearchResults = async (
+      completedSourceCount: number,
+    ): Promise<boolean> => {
+      try {
+        const response = await fetch(
+          '/api/search?q=' + encodeURIComponent(trimmed),
+        );
+        if (!response.ok) {
+          throw new Error(
+            'search request failed with status ' + response.status,
+          );
+        }
+
+        const payload = (await response.json()) as Record<string, unknown>;
+        if (currentQueryRef.current !== trimmed) {
+          return false;
+        }
+
+        applySafeSearchState(
+          createSafeSearchState({
+            data: sanitizeSearchResults(payload.results),
+            normalizedQuery:
+              typeof payload.normalizedQuery === 'string'
+                ? payload.normalizedQuery
+                : '',
+            isLoading: false,
+            hasError: false,
+            totalSources:
+              totalSources > 0 ? totalSources : Math.max(completedSourceCount, 1),
+            completedSources:
+              totalSources > 0 ? totalSources : Math.max(completedSourceCount, 1),
+          }),
+        );
+        return true;
+      } catch (error) {
+        console.error('canonical search request failed:', error);
+        return false;
+      }
+    };
+
     const markSearchFailed = () => {
       flushPendingResults();
       applySafeSearchState(
@@ -754,15 +802,26 @@ function SearchPageClient() {
                 setCompletedSources((previous) => previous + 1);
                 break;
               case 'complete':
-                setCompletedSources(
-                  typeof payload.completedSources === 'number' &&
+                {
+                  const completedSourceCount =
+                    typeof payload.completedSources === 'number' &&
                     Number.isFinite(payload.completedSources)
-                    ? payload.completedSources
-                    : totalSources,
-                );
-                flushPendingResults();
-                setIsLoading(false);
-                setHasSearchError(false);
+                      ? payload.completedSources
+                      : totalSources;
+
+                  setCompletedSources(completedSourceCount);
+                  flushPendingResults();
+
+                  void (async () => {
+                    const synced = await fetchCanonicalSearchResults(
+                      completedSourceCount,
+                    );
+                    if (!synced && currentQueryRef.current === trimmed) {
+                      setIsLoading(false);
+                      setHasSearchError(false);
+                    }
+                  })();
+                }
                 try {
                   es.close();
                 } catch {}
@@ -996,6 +1055,11 @@ function SearchPageClient() {
               <div className='mb-4'>
                 <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
                   搜索结果
+                  <span className='ml-2 text-sm font-normal text-gray-500 dark:text-gray-400'>
+                    {viewMode === 'agg'
+                      ? `当前展示 ${displayedResultCount} 组 / 原始 ${searchResults.length} 条`
+                      : `当前展示 ${displayedResultCount} 条 / 原始 ${searchResults.length} 条`}
+                  </span>
                   {totalSources > 0 && useFluidSearch && (
                     <span className='ml-2 text-sm font-normal text-gray-500 dark:text-gray-400'>
                       {completedSources}/{totalSources}
@@ -1078,7 +1142,12 @@ function SearchPageClient() {
                   {viewMode === 'agg' ? (
                     Array.isArray(filteredAggResults) ? (
                       <VirtualizedVideoGrid
-                        mode='auto'
+                        // The search page currently scrolls with document.body,
+                        // which can break window-scroll virtualization and make
+                        // only the first screenful of cards appear reachable.
+                        // Prefer full rendering here until the scroll container
+                        // is wired to Virtuoso correctly.
+                        mode='never'
                         data={filteredAggResults}
                         virtualizationThreshold={240}
                         overscan={640}
@@ -1133,7 +1202,9 @@ function SearchPageClient() {
                     )
                   ) : Array.isArray(filteredAllResults) ? (
                     <VirtualizedVideoGrid
-                      mode='auto'
+                      // See the aggregate grid note above. Disable virtualization
+                      // on the search page so all matched results remain reachable.
+                      mode='never'
                       data={filteredAllResults}
                       virtualizationThreshold={240}
                       overscan={640}
