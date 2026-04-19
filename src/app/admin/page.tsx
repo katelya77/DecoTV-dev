@@ -5884,6 +5884,24 @@ const LiveSourceConfig = ({
     disabled: false,
     from: 'custom',
   });
+  const [importExportModal, setImportExportModal] = useState<{
+    isOpen: boolean;
+    mode: 'import' | 'export' | 'result';
+    result?: {
+      success: number;
+      failed: number;
+      skipped: number;
+      details: Array<{
+        name: string;
+        key: string;
+        status: 'success' | 'failed' | 'skipped';
+        reason?: string;
+      }>;
+    };
+  }>({
+    isOpen: false,
+    mode: 'import',
+  });
 
   // dnd-kit 传感器
   const sensors = useSensors(
@@ -5978,16 +5996,24 @@ const LiveSourceConfig = ({
   };
 
   // 通用 API 请求
-  const callLiveSourceApi = async (body: Record<string, any>) => {
+  const callLiveSourceApi = async (
+    body: Record<string, any>,
+    options?: {
+      skipRefresh?: boolean;
+      skipLocalSuccessToast?: boolean;
+    },
+  ) => {
     // 本地模式：直接更新配置，不调用 API
     if (storageMode === 'local') {
       updateLiveConfigLocally(body.action, body);
-      showAlert({
-        type: 'success',
-        title: '操作成功',
-        message: '配置已保存到本地',
-        timer: 2000,
-      });
+      if (!options?.skipLocalSuccessToast) {
+        showAlert({
+          type: 'success',
+          title: '操作成功',
+          message: '配置已保存到本地',
+          timer: 2000,
+        });
+      }
       return;
     }
 
@@ -6004,7 +6030,9 @@ const LiveSourceConfig = ({
       }
 
       // 成功后刷新配置
-      await refreshConfig();
+      if (!options?.skipRefresh) {
+        await refreshConfig();
+      }
     } catch (err) {
       showError(err instanceof Error ? err.message : '操作失败', showAlert);
       throw err; // 向上抛出方便调用处判断
@@ -6134,6 +6162,255 @@ const LiveSourceConfig = ({
       });
   };
 
+  const normalizeLiveImportData = (importData: unknown) => {
+    if (Array.isArray(importData)) {
+      return importData;
+    }
+
+    if (importData && typeof importData === 'object') {
+      const record = importData as Record<string, unknown>;
+      const liveMap =
+        record.lives &&
+        typeof record.lives === 'object' &&
+        !Array.isArray(record.lives)
+          ? (record.lives as Record<string, unknown>)
+          : record;
+
+      const items = Object.entries(liveMap)
+        .filter(([, value]) => value && typeof value === 'object')
+        .map(([key, value]) => ({
+          key,
+          ...(value as Record<string, unknown>),
+        }))
+        .filter((item) => 'name' in item || 'url' in item);
+
+      if (items.length > 0) {
+        return items;
+      }
+    }
+
+    throw new Error(
+      'JSON 格式错误：请使用数组格式，或配置文件格式 {"lives": {...}}',
+    );
+  };
+
+  const handleExportLiveSources = (
+    exportFormat: 'array' | 'config' = 'array',
+  ) => {
+    try {
+      if (liveSources.length === 0) {
+        showAlert({
+          type: 'warning',
+          title: '没有可导出的直播源',
+          message: '请先添加直播源后再导出',
+        });
+        return;
+      }
+
+      const now = new Date();
+      const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      let exportData: any;
+      let filename: string;
+
+      if (exportFormat === 'config') {
+        const lives: Record<
+          string,
+          {
+            name: string;
+            url: string;
+            ua?: string;
+            epg?: string;
+          }
+        > = {};
+
+        liveSources.forEach((source) => {
+          const liveItem: {
+            name: string;
+            url: string;
+            ua?: string;
+            epg?: string;
+          } = {
+            name: source.name,
+            url: source.url,
+          };
+          if (source.ua) {
+            liveItem.ua = source.ua;
+          }
+          if (source.epg) {
+            liveItem.epg = source.epg;
+          }
+          lives[source.key] = liveItem;
+        });
+
+        exportData = { lives };
+        filename = `live_config_${timestamp}.json`;
+      } else {
+        exportData = liveSources.map((source) => ({
+          name: source.name,
+          key: source.key,
+          url: source.url,
+          epg: source.epg || '',
+          ua: source.ua || '',
+          disabled: source.disabled || false,
+        }));
+        filename = `live_sources_${timestamp}.json`;
+      }
+
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+
+      const formatText =
+        exportFormat === 'config' ? '配置文件格式' : '数组格式';
+      showAlert({
+        type: 'success',
+        title: '导出成功',
+        message: `已导出 ${liveSources.length} 个直播源（${formatText}）到 ${filename}`,
+        timer: 3000,
+      });
+
+      setImportExportModal({ isOpen: false, mode: 'export' });
+    } catch (err) {
+      showAlert({
+        type: 'error',
+        title: '导出失败',
+        message: err instanceof Error ? err.message : '未知错误',
+      });
+    }
+  };
+
+  const handleImportLiveSources = async (
+    file: File,
+    onProgress?: (current: number, total: number) => void,
+  ) => {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const importItems = normalizeLiveImportData(parsed);
+
+      if (importItems.length === 0) {
+        throw new Error('文件中没有可导入的直播源数据');
+      }
+
+      const result = {
+        success: 0,
+        failed: 0,
+        skipped: 0,
+        details: [] as Array<{
+          name: string;
+          key: string;
+          status: 'success' | 'failed' | 'skipped';
+          reason?: string;
+        }>,
+      };
+
+      const existingKeys = new Set(liveSources.map((source) => source.key));
+      const total = importItems.length;
+
+      for (let i = 0; i < importItems.length; i++) {
+        const rawItem = importItems[i] as Record<string, unknown>;
+        if (onProgress) {
+          onProgress(i + 1, total);
+        }
+
+        const key = typeof rawItem.key === 'string' ? rawItem.key.trim() : '';
+        const name =
+          typeof rawItem.name === 'string' ? rawItem.name.trim() : '';
+        const url = typeof rawItem.url === 'string' ? rawItem.url.trim() : '';
+        const ua = typeof rawItem.ua === 'string' ? rawItem.ua.trim() : '';
+        const epg = typeof rawItem.epg === 'string' ? rawItem.epg.trim() : '';
+
+        if (!name || !key || !url) {
+          result.failed++;
+          result.details.push({
+            name: name || '未知',
+            key: key || '未知',
+            status: 'failed',
+            reason: '缺少必要字段（name、key 或 url）',
+          });
+          continue;
+        }
+
+        if (existingKeys.has(key)) {
+          result.skipped++;
+          result.details.push({
+            name,
+            key,
+            status: 'skipped',
+            reason: '该 key 已存在，跳过导入',
+          });
+          continue;
+        }
+
+        try {
+          await callLiveSourceApi(
+            {
+              action: 'add',
+              key,
+              name,
+              url,
+              ua,
+              epg,
+            },
+            {
+              skipRefresh: true,
+              skipLocalSuccessToast: true,
+            },
+          );
+
+          existingKeys.add(key);
+          result.success++;
+          result.details.push({
+            name,
+            key,
+            status: 'success',
+          });
+        } catch (err) {
+          result.failed++;
+          result.details.push({
+            name,
+            key,
+            status: 'failed',
+            reason: err instanceof Error ? err.message : '导入失败',
+          });
+        }
+      }
+
+      setImportExportModal({
+        isOpen: true,
+        mode: 'result',
+        result,
+      });
+
+      if (result.success > 0 && storageMode !== 'local') {
+        await refreshConfig();
+      }
+
+      return result;
+    } catch (err) {
+      showAlert({
+        type: 'error',
+        title: '导入失败',
+        message: err instanceof Error ? err.message : '文件解析失败',
+      });
+      setImportExportModal({ isOpen: false, mode: 'import' });
+      return {
+        success: 0,
+        failed: 0,
+        skipped: 0,
+        details: [],
+      };
+    }
+  };
+
   // 可拖拽行封装 (dnd-kit)
   const DraggableRow = ({ liveSource }: { liveSource: LiveDataSource }) => {
     const { attributes, listeners, setNodeRef, transform, transition } =
@@ -6256,11 +6533,33 @@ const LiveSourceConfig = ({
   return (
     <div className='space-y-6'>
       {/* 添加直播源表单 */}
-      <div className='flex items-center justify-between'>
+      <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4'>
         <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
           直播源列表
         </h4>
-        <div className='flex items-center space-x-2'>
+        <div className='flex flex-wrap items-center gap-2'>
+          <button
+            onClick={() =>
+              setImportExportModal({ isOpen: true, mode: 'import' })
+            }
+            className='px-3 py-1 text-sm rounded-lg transition-colors flex items-center space-x-1 bg-linear-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 text-white'
+            title='从 JSON 文件导入直播源'
+          >
+            <Upload className='w-4 h-4' />
+            <span className='hidden sm:inline'>导入直播源</span>
+            <span className='sm:hidden'>导入</span>
+          </button>
+          <button
+            onClick={() =>
+              setImportExportModal({ isOpen: true, mode: 'export' })
+            }
+            className='px-3 py-1 text-sm rounded-lg transition-colors flex items-center space-x-1 bg-linear-to-r from-green-600 to-emerald-500 hover:from-green-700 hover:to-emerald-600 text-white'
+            title='导出所有直播源'
+          >
+            <Download className='w-4 h-4' />
+            <span className='hidden sm:inline'>导出直播源</span>
+            <span className='sm:hidden'>导出</span>
+          </button>
           <button
             onClick={handleRefreshLiveSources}
             disabled={isRefreshing || isLoading('refreshLiveSources')}
@@ -6558,6 +6857,25 @@ const LiveSourceConfig = ({
         timer={alertModal.timer}
         showConfirm={alertModal.showConfirm}
       />
+
+      {importExportModal.isOpen && (
+        <ImportExportModal
+          isOpen={importExportModal.isOpen}
+          mode={importExportModal.mode}
+          onClose={() =>
+            setImportExportModal({ isOpen: false, mode: 'import' })
+          }
+          onImport={handleImportLiveSources}
+          onExport={handleExportLiveSources}
+          result={importExportModal.result}
+          entityName='直播源'
+          arrayFormatDescription='用于"直播源配置"卡片的导入功能,支持批量导入直播源'
+          configFormatDescription='用于"配置文件"卡片,可直接粘贴到配置文件编辑器中的 lives 字段'
+          configFormatExample='{"lives": {...}}'
+          arrayFilenameHint='live_sources_YYYYMMDD_HHMMSS.json'
+          configFilenameHint='live_config_YYYYMMDD_HHMMSS.json'
+        />
+      )}
     </div>
   );
 };
