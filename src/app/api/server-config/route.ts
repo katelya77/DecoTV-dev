@@ -44,6 +44,10 @@ export async function GET(request: NextRequest) {
     PrivateLibraryEnabled: Boolean(
       config.PrivateLibraryConfig?.connectors?.some((item) => item.enabled),
     ),
+    SearchResultLoadMode:
+      config.SiteConfig.SearchResultLoadMode === 'pagination'
+        ? 'pagination'
+        : 'infinite',
     // 提供说明信息
     AdultFilterInfo: {
       enabled: adultFilterEnabled,

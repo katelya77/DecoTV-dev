@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
         TmdbReverseProxy,
         DisableYellowFilter,
         FluidSearch,
+        SearchResultLoadMode,
         LoginBackground,
       } = body as {
         SiteName: string;
@@ -48,8 +49,12 @@ export async function POST(request: NextRequest) {
         TmdbReverseProxy?: string;
         DisableYellowFilter: boolean;
         FluidSearch: boolean;
+        SearchResultLoadMode?: 'infinite' | 'pagination';
         LoginBackground?: string;
       };
+
+      const normalizedSearchResultLoadMode =
+        SearchResultLoadMode === 'pagination' ? 'pagination' : 'infinite';
 
       const localConfig = getLocalModeConfig();
       localConfig.SiteConfig = {
@@ -63,6 +68,7 @@ export async function POST(request: NextRequest) {
         DoubanImageProxy,
         DisableYellowFilter,
         FluidSearch,
+        SearchResultLoadMode: normalizedSearchResultLoadMode,
         LoginBackground,
       };
       localConfig.TMDBConfig = {
@@ -106,6 +112,7 @@ export async function POST(request: NextRequest) {
       TmdbReverseProxy,
       DisableYellowFilter,
       FluidSearch,
+      SearchResultLoadMode,
       LoginBackground,
     } = body as {
       SiteName: string;
@@ -122,8 +129,12 @@ export async function POST(request: NextRequest) {
       TmdbReverseProxy?: string;
       DisableYellowFilter: boolean;
       FluidSearch: boolean;
+      SearchResultLoadMode?: 'infinite' | 'pagination';
       LoginBackground?: string;
     };
+
+    const normalizedSearchResultLoadMode =
+      SearchResultLoadMode === 'pagination' ? 'pagination' : 'infinite';
 
     // 参数校验
     if (
@@ -141,7 +152,10 @@ export async function POST(request: NextRequest) {
       (TmdbReverseProxy !== undefined &&
         typeof TmdbReverseProxy !== 'string') ||
       typeof DisableYellowFilter !== 'boolean' ||
-      typeof FluidSearch !== 'boolean'
+      typeof FluidSearch !== 'boolean' ||
+      (SearchResultLoadMode !== undefined &&
+        SearchResultLoadMode !== 'infinite' &&
+        SearchResultLoadMode !== 'pagination')
     ) {
       return NextResponse.json({ error: '参数格式错误' }, { status: 400 });
     }
@@ -174,6 +188,7 @@ export async function POST(request: NextRequest) {
       TmdbReverseProxy: TmdbReverseProxy || '',
       DisableYellowFilter,
       FluidSearch,
+      SearchResultLoadMode: normalizedSearchResultLoadMode,
       LoginBackground: LoginBackground || '',
     };
 

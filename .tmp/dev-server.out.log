@@ -1,0 +1,24 @@
+
+> decotv@1.4.0 dev C:\Users\Katelya\Documents\VScode\DecoTV\DecoTV
+> pnpm gen:manifest && next dev -H 0.0.0.0
+
+
+> decotv@1.4.0 gen:manifest C:\Users\Katelya\Documents\VScode\DecoTV\DecoTV
+> node scripts/generate-manifest.js
+
+✅ Generated manifest.json with site name: DecoTV
+▲ Next.js 16.1.0 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://0.0.0.0:3000
+- Experiments (use with caution):
+  · optimizePackageImports
+
+✓ Starting...
+✓ Ready in 1574ms
+[MemoryStorage] 内存存储已初始化（本地模式）
+[MemoryStorage] 管理员配置已更新，视频源数量: 0
+ GET /login 200 in 2.1s (compile: 1866ms, render: 187ms)
+[MemoryStorage] 内存存储已初始化（本地模式）
+server-config called:  http://0.0.0.0:3000/api/server-config
+[MemoryStorage] 管理员配置已更新，视频源数量: 0
+ GET /api/server-config 200 in 431ms (compile: 419ms, render: 12ms)

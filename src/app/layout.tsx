@@ -61,6 +61,10 @@ export default async function RootLayout({
   let disableYellowFilter =
     process.env.NEXT_PUBLIC_DISABLE_YELLOW_FILTER === 'true';
   let fluidSearch = process.env.NEXT_PUBLIC_FLUID_SEARCH !== 'false';
+  let searchResultLoadMode =
+    process.env.NEXT_PUBLIC_SEARCH_RESULT_LOAD_MODE === 'pagination'
+      ? 'pagination'
+      : 'infinite';
   let privateLibraryEnabled = false;
   let customCategories = [] as {
     name: string;
@@ -85,6 +89,10 @@ export default async function RootLayout({
       query: category.query,
     }));
     fluidSearch = config.SiteConfig.FluidSearch;
+    searchResultLoadMode =
+      config.SiteConfig.SearchResultLoadMode === 'pagination'
+        ? 'pagination'
+        : 'infinite';
     privateLibraryEnabled = Boolean(
       config.PrivateLibraryConfig?.connectors?.some((item) => item.enabled),
     );
@@ -100,6 +108,7 @@ export default async function RootLayout({
     DISABLE_YELLOW_FILTER: disableYellowFilter,
     CUSTOM_CATEGORIES: customCategories,
     FLUID_SEARCH: fluidSearch,
+    SEARCH_RESULT_LOAD_MODE: searchResultLoadMode,
     PRIVATE_LIBRARY_ENABLED: privateLibraryEnabled,
   };
 

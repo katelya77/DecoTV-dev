@@ -52,6 +52,7 @@ import {
   AdminConfig,
   DanmuCustomNode,
   PrivateLibraryConnector,
+  SearchResultLoadMode,
 } from '@/lib/admin.types';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 import { DEFAULT_PANSOU_SERVER_URL } from '@/lib/pansou';
@@ -359,6 +360,7 @@ interface SiteConfig {
   TmdbReverseProxy: string;
   DisableYellowFilter: boolean;
   FluidSearch: boolean;
+  SearchResultLoadMode: SearchResultLoadMode;
   // 登录页面背景图
   LoginBackground: string;
 }
@@ -5141,6 +5143,7 @@ const SiteConfigComponent = ({
     TmdbReverseProxy: '',
     DisableYellowFilter: false,
     FluidSearch: true,
+    SearchResultLoadMode: 'infinite',
     LoginBackground: 'https://pan.yyds.nyc.mn/background.png',
   });
 
@@ -5209,6 +5212,10 @@ const SiteConfigComponent = ({
         TmdbReverseProxy: config.SiteConfig.TmdbReverseProxy || '',
         DisableYellowFilter: config.SiteConfig.DisableYellowFilter || false,
         FluidSearch: config.SiteConfig.FluidSearch ?? true,
+        SearchResultLoadMode:
+          config.SiteConfig.SearchResultLoadMode === 'pagination'
+            ? 'pagination'
+            : 'infinite',
         LoginBackground:
           config.SiteConfig.LoginBackground ||
           'https://pan.yyds.nyc.mn/background.png',
@@ -5767,6 +5774,40 @@ const SiteConfigComponent = ({
         </div>
         <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
           启用后搜索结果将实时流式返回，提升用户体验。
+        </p>
+      </div>
+
+      {/* 搜索结果加载方式 */}
+      <div>
+        <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+          搜索结果加载方式
+        </label>
+        <div className='inline-flex rounded-lg border border-gray-300 bg-white p-1 dark:border-gray-600 dark:bg-gray-800'>
+          {[
+            { value: 'infinite' as const, label: '触底加载' },
+            { value: 'pagination' as const, label: '分页显示' },
+          ].map((option) => (
+            <button
+              key={option.value}
+              type='button'
+              onClick={() =>
+                setSiteSettings((prev) => ({
+                  ...prev,
+                  SearchResultLoadMode: option.value,
+                }))
+              }
+              className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
+                siteSettings.SearchResultLoadMode === option.value
+                  ? 'bg-green-600 text-white shadow-sm'
+                  : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+          触底加载会随着下滑继续追加结果；分页显示则通过上一页/下一页切换。
         </p>
       </div>
 

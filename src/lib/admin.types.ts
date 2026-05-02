@@ -40,6 +40,8 @@ export interface PrivateLibraryConfig {
   connectors: PrivateLibraryConnector[];
 }
 
+export type SearchResultLoadMode = 'infinite' | 'pagination';
+
 export interface AdminConfig {
   ConfigSubscribtion: {
     URL: string;
@@ -61,6 +63,7 @@ export interface AdminConfig {
     TmdbReverseProxy?: string;
     DisableYellowFilter: boolean;
     FluidSearch: boolean;
+    SearchResultLoadMode: SearchResultLoadMode;
     LoginBackground?: string;
   };
   UserConfig: {

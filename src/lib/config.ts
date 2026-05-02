@@ -2,7 +2,7 @@
 
 import { db } from '@/lib/db';
 
-import { AdminConfig } from './admin.types';
+import { AdminConfig, SearchResultLoadMode } from './admin.types';
 import { getDefaultPanSouConfig, normalizePanSouConfig } from './pansou';
 import { normalizePrivateLibraryConfig } from './private-library-config';
 
@@ -58,6 +58,12 @@ export const API_CONFIG = {
 
 // 在模块加载时根据环境决定配置来源
 let cachedConfig: AdminConfig;
+
+function getDefaultSearchResultLoadMode(): SearchResultLoadMode {
+  return process.env.NEXT_PUBLIC_SEARCH_RESULT_LOAD_MODE === 'pagination'
+    ? 'pagination'
+    : 'infinite';
+}
 
 function normalizeForComparison(value: unknown): unknown {
   if (Array.isArray(value)) {
@@ -297,6 +303,7 @@ async function getInitConfig(
       DisableYellowFilter:
         process.env.NEXT_PUBLIC_DISABLE_YELLOW_FILTER === 'true',
       FluidSearch: process.env.NEXT_PUBLIC_FLUID_SEARCH !== 'false',
+      SearchResultLoadMode: getDefaultSearchResultLoadMode(),
     },
     UserConfig: {
       Users: [],
@@ -422,6 +429,7 @@ export function getLocalModeConfig(): AdminConfig {
       DisableYellowFilter:
         process.env.NEXT_PUBLIC_DISABLE_YELLOW_FILTER === 'true',
       FluidSearch: process.env.NEXT_PUBLIC_FLUID_SEARCH !== 'false',
+      SearchResultLoadMode: getDefaultSearchResultLoadMode(),
     },
     UserConfig: {
       Users: [
@@ -502,6 +510,14 @@ export function configSelfCheck(adminConfig: AdminConfig): AdminConfig {
   }
 
   // 确保必要的属性存在和初始化
+  if (
+    adminConfig.SiteConfig.SearchResultLoadMode !== 'pagination' &&
+    adminConfig.SiteConfig.SearchResultLoadMode !== 'infinite'
+  ) {
+    adminConfig.SiteConfig.SearchResultLoadMode =
+      getDefaultSearchResultLoadMode();
+  }
+
   if (!adminConfig.UserConfig) {
     adminConfig.UserConfig = { Users: [] };
   }
