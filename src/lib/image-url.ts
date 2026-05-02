@@ -6,7 +6,6 @@ const TIER1_DIRECT_HOSTS = new Set(['lain.bgm.tv']);
 const WSRV_HOSTS = new Set(['wsrv.nl', 'images.weserv.nl']);
 const CMLIUSSSS_TENCENT_HOST = 'img.doubanio.cmliussss.net';
 const CMLIUSSSS_ALI_HOST = 'img.doubanio.cmliussss.com';
-const DOUBAN_DIRECT_HOST = 'img.doubanio.com';
 const DOUBAN_IMG3_HOST = 'img3.doubanio.com';
 
 export type DoubanImageProxyType =
@@ -69,10 +68,6 @@ function isDoubanImageHost(hostname: string): boolean {
     hostname === CMLIUSSSS_TENCENT_HOST ||
     hostname === CMLIUSSSS_ALI_HOST
   );
-}
-
-function isCmliussssHost(hostname: string): boolean {
-  return hostname === CMLIUSSSS_TENCENT_HOST || hostname === CMLIUSSSS_ALI_HOST;
 }
 
 function toWsrvUrl(absoluteUrl: string, wsrvWidth: number): string {
@@ -169,11 +164,6 @@ export function resolveImageUrl(
   }
 
   if (isDoubanImageHost(hostname)) {
-    // 已经是 cmliussss 镜像的 URL（来自旧缓存）先归一回 doubanio.com，
-    // 让下面的代理分支按用户选择重新派发；选 direct 时也能真正回到豆瓣官源。
-    if (isCmliussssHost(hostname)) {
-      parsedUrl.hostname = DOUBAN_DIRECT_HOST;
-    }
     const defaults = getDefaultDoubanImageProxy();
     const proxyType =
       options.doubanImageProxy?.proxyType?.trim() || defaults.proxyType;
