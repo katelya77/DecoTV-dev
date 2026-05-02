@@ -201,7 +201,12 @@ export async function GET(request: Request) {
     body = rewriteMasterPlaylist(content, baseUrl, request, refererToSend);
   } else {
     const absolute = absolutizeVariantPlaylist(content, baseUrl);
-    if (isAdFilterEnabled()) {
+    // 调试/对照场景：?adfilter=false 让代理只做 referer 透传 + 相对路径绝对化，
+    // 不删任何广告段，方便客户端拿到原始时间轴
+    const queryDisable =
+      searchParams.get('adfilter') === 'false' ||
+      searchParams.get('adfilter') === '0';
+    if (isAdFilterEnabled() && !queryDisable) {
       const result = filterM3U8(absolute);
       body = result.filtered;
       adsRemoved = result.adsRemoved;
