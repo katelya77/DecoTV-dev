@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthInfoFromCookie, verifyApiAuth } from '@/lib/auth';
 import { getAvailableApiSites, getCacheTime } from '@/lib/config';
 import { getDetailFromApi } from '@/lib/downstream';
+import { rewriteEpisodesForAdFilter } from '@/lib/episode-rewriter';
 import {
   buildPrivateLibraryPosterUrl,
   formatPrivateLibrarySourceName,
@@ -165,7 +166,9 @@ export async function GET(request: NextRequest) {
     const result = await getDetailFromApi(apiSite, id);
     const cacheTime = await getCacheTime();
 
-    return NextResponse.json(result, {
+    const finalResult = await rewriteEpisodesForAdFilter(result, request);
+
+    return NextResponse.json(finalResult, {
       headers: {
         'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
         'CDN-Cache-Control': `public, s-maxage=${cacheTime}`,

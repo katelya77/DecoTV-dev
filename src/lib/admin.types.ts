@@ -87,6 +87,7 @@ export interface AdminConfig {
     from: 'config' | 'custom';
     disabled?: boolean;
     is_adult?: boolean;
+    disable_ad_filter?: boolean;
   }[];
   CustomCategories: {
     name?: string;
@@ -132,6 +133,9 @@ export interface AdminConfig {
     ReverseProxy: string;
   };
   PrivateLibraryConfig?: PrivateLibraryConfig;
+  AdFilterConfig?: {
+    enabled: boolean;
+  };
 }
 
 export interface AdminConfigResult {

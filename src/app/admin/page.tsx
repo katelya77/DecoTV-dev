@@ -373,6 +373,7 @@ interface DataSource {
   detail?: string;
   disabled?: boolean;
   is_adult?: boolean; // 标记是否为成人资源
+  disable_ad_filter?: boolean; // 该源不走 m3u8 广告过滤代理
   from: 'config' | 'custom';
 }
 
@@ -2848,6 +2849,23 @@ const VideoSourceConfig = ({
     });
   };
 
+  // 切换该源是否走 m3u8 广告过滤代理（disable_ad_filter=true 时该源直连上游，跳过过滤）
+  const handleToggleAdFilter = (key: string) => {
+    const target = sources.find((s) => s.key === key);
+    if (!target) return;
+    const newDisable = !target.disable_ad_filter;
+
+    withLoading(`toggleAdFilter_${key}`, () =>
+      callSourceApi({
+        action: 'update_ad_filter',
+        key,
+        disable_ad_filter: newDisable,
+      }),
+    ).catch(() => {
+      console.error('切换广告过滤豁免失败', key);
+    });
+  };
+
   const handleDelete = (key: string) => {
     const target = sources.find((s) => s.key === key);
     if (!target) return;
@@ -3535,6 +3553,32 @@ const VideoSourceConfig = ({
             />
           </button>
         </td>
+        <td className='px-6 py-4 whitespace-nowrap text-center'>
+          <button
+            onClick={() => handleToggleAdFilter(source.key)}
+            disabled={isLoading(`toggleAdFilter_${source.key}`)}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${
+              !source.disable_ad_filter
+                ? buttonStyles.toggleOn
+                : buttonStyles.toggleOff
+            } ${
+              isLoading(`toggleAdFilter_${source.key}`)
+                ? 'opacity-50 cursor-not-allowed'
+                : 'cursor-pointer hover:opacity-80'
+            }`}
+            title={
+              source.disable_ad_filter
+                ? '已豁免：该源直连上游，不删广告段'
+                : '已启用：通过 m3u8 过滤代理删除广告段'
+            }
+          >
+            <span
+              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                !source.disable_ad_filter ? 'translate-x-5' : 'translate-x-0.5'
+              }`}
+            />
+          </button>
+        </td>
         <td className='px-6 py-4 whitespace-nowrap max-w-4'>
           {(() => {
             const status = getValidationStatus(source.key);
@@ -4135,6 +4179,12 @@ const VideoSourceConfig = ({
                 </th>
                 <th className='px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
                   成人资源
+                </th>
+                <th
+                  className='px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'
+                  title='关闭后该源将跳过 m3u8 广告过滤代理，直连上游'
+                >
+                  广告过滤
                 </th>
                 <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
                   有效性
@@ -5147,6 +5197,10 @@ const SiteConfigComponent = ({
     LoginBackground: 'https://pan.yyds.nyc.mn/background.png',
   });
 
+  // 广告过滤总开关（独立于 SiteConfig，立即保存到 /api/admin/adfilter）
+  const [adFilterEnabled, setAdFilterEnabled] = useState(true);
+  const [adFilterSaving, setAdFilterSaving] = useState(false);
+
   // 豆瓣数据源相关状态
   const [isDoubanDropdownOpen, setIsDoubanDropdownOpen] = useState(false);
   const [isDoubanImageProxyDropdownOpen, setIsDoubanImageProxyDropdownOpen] =
@@ -5221,7 +5275,35 @@ const SiteConfigComponent = ({
           'https://pan.yyds.nyc.mn/background.png',
       });
     }
+    if (config?.AdFilterConfig) {
+      setAdFilterEnabled(config.AdFilterConfig.enabled ?? true);
+    }
   }, [config]);
+
+  // 切换广告过滤总开关，立即调用 /api/admin/adfilter 保存
+  const handleToggleAdFilterGlobal = async () => {
+    if (adFilterSaving) return;
+    const next = !adFilterEnabled;
+    setAdFilterEnabled(next); // 乐观更新
+    setAdFilterSaving(true);
+    try {
+      const resp = await fetch('/api/admin/adfilter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: next }),
+      });
+      if (!resp.ok) {
+        setAdFilterEnabled(!next); // 失败回滚
+        const err = await resp.json().catch(() => null);
+        showError(err?.error || '保存广告过滤开关失败');
+      }
+    } catch (e) {
+      setAdFilterEnabled(!next);
+      showError(e instanceof Error ? e.message : '保存广告过滤开关失败');
+    } finally {
+      setAdFilterSaving(false);
+    }
+  };
 
   // 点击外部区域关闭下拉框
   useEffect(() => {
@@ -5808,6 +5890,38 @@ const SiteConfigComponent = ({
         </div>
         <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
           触底加载会随着下滑继续追加结果；分页显示则通过上一页/下一页切换。
+        </p>
+      </div>
+
+      {/* 广告过滤总开关（独立于其他 SiteConfig，立即保存） */}
+      <div>
+        <div className='flex items-center justify-between'>
+          <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+            启用 m3u8 广告过滤
+          </label>
+          <button
+            type='button'
+            onClick={handleToggleAdFilterGlobal}
+            disabled={adFilterSaving}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 ${
+              adFilterEnabled ? buttonStyles.toggleOn : buttonStyles.toggleOff
+            } ${adFilterSaving ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full ${
+                buttonStyles.toggleThumb
+              } transition-transform ${
+                adFilterEnabled
+                  ? buttonStyles.toggleThumbOn
+                  : buttonStyles.toggleThumbOff
+              }`}
+            />
+          </button>
+        </div>
+        <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+          自动识别并删除 CMS 资源站 m3u8 中由 #EXT-X-DISCONTINUITY
+          拼接的广告分段。
+          关掉后所有源直连上游，不再走过滤代理。可在视频源列表里对单个源单独豁免。
         </p>
       </div>
 
