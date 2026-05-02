@@ -19,20 +19,24 @@ function isAdFilterEnabled(): boolean {
   return flag === 'true' || flag === '1';
 }
 
-function buildProxyUrl(request: Request, upstreamUrl: string): string {
-  const referer = request.headers.get('referer');
-  let protocol = 'http';
-  if (referer) {
-    try {
-      protocol = new URL(referer).protocol.replace(':', '');
-    } catch {
-      // ignore
-    }
-  }
+function buildProxyUrl(
+  request: Request,
+  upstreamUrl: string,
+  referer?: string,
+): string {
   const host = request.headers.get('host');
-  return `${protocol}://${host}/api/proxy/m3u8-filter?url=${encodeURIComponent(
-    upstreamUrl,
-  )}`;
+  const protocol =
+    request.headers.get('x-forwarded-proto') ||
+    (() => {
+      try {
+        return new URL(request.url).protocol.replace(':', '');
+      } catch {
+        return 'http';
+      }
+    })();
+  let qs = `url=${encodeURIComponent(upstreamUrl)}`;
+  if (referer) qs += `&referer=${encodeURIComponent(referer)}`;
+  return `${protocol}://${host}/api/proxy/m3u8-filter?${qs}`;
 }
 
 /**
@@ -43,6 +47,7 @@ function rewriteMasterPlaylist(
   content: string,
   baseUrl: string,
   request: Request,
+  referer?: string,
 ): string {
   const lines = content.split('\n');
   const out: string[] = [];
@@ -57,7 +62,7 @@ function rewriteMasterPlaylist(
         const variantLine = lines[i + 1].trim();
         if (variantLine && !variantLine.startsWith('#')) {
           const absolute = resolveUrl(baseUrl, variantLine);
-          out.push(buildProxyUrl(request, absolute));
+          out.push(buildProxyUrl(request, absolute, referer));
           i++;
           continue;
         }
@@ -132,6 +137,30 @@ export async function GET(request: Request) {
 
   const ua = request.headers.get('user-agent') || DEFAULT_UA;
 
+  // 上游资源站常按 Referer/Origin 做白名单校验。优先级：
+  //   1. URL 显式参数 ?referer=...（客户端已知最准确的来源）
+  //   2. 入站请求自带的 Referer（浏览器自然发出的）
+  //   3. 上游 URL 自身的 origin 作为兜底（很多源站允许同源 Referer）
+  const explicitReferer = searchParams.get('referer') || undefined;
+  const inboundReferer = request.headers.get('referer') || undefined;
+  let fallbackReferer: string | undefined;
+  try {
+    fallbackReferer = new URL(decodedUrl).origin + '/';
+  } catch {
+    fallbackReferer = undefined;
+  }
+  const refererToSend = explicitReferer || inboundReferer || fallbackReferer;
+
+  const upstreamHeaders: Record<string, string> = { 'User-Agent': ua };
+  if (refererToSend) {
+    upstreamHeaders['Referer'] = refererToSend;
+    try {
+      upstreamHeaders['Origin'] = new URL(refererToSend).origin;
+    } catch {
+      // ignore
+    }
+  }
+
   let upstream: Response;
   try {
     upstream = await fetchWithTimeout(
@@ -139,7 +168,7 @@ export async function GET(request: Request) {
       {
         cache: 'no-store',
         redirect: 'follow',
-        headers: { 'User-Agent': ua },
+        headers: upstreamHeaders,
       },
       FETCH_TIMEOUT_MS,
     );
@@ -167,7 +196,9 @@ export async function GET(request: Request) {
   let adsDuration = 0;
 
   if (content.includes('#EXT-X-STREAM-INF')) {
-    body = rewriteMasterPlaylist(content, baseUrl, request);
+    // 把当前请求用的 referer 透传到变体 URL 的代理参数里，
+    // 否则下一跳又会因为没有 Referer 被上游拒
+    body = rewriteMasterPlaylist(content, baseUrl, request, refererToSend);
   } else {
     const absolute = absolutizeVariantPlaylist(content, baseUrl);
     if (isAdFilterEnabled()) {
