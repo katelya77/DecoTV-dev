@@ -9,7 +9,11 @@ import {
   useState,
 } from 'react';
 
-import { POSTER_FALLBACK_SRC, resolveImageUrl } from '@/lib/image-url';
+import {
+  type DoubanImageProxyOverride,
+  POSTER_FALLBACK_SRC,
+  resolveImageUrl,
+} from '@/lib/image-url';
 
 type ExternalImageProps = Omit<ImageProps, 'src'> & {
   src: ImageProps['src'];
@@ -20,11 +24,29 @@ type ExternalImageProps = Omit<ImageProps, 'src'> & {
 function resolveSrc(
   src: ImageProps['src'],
   proxyWidth: number,
+  doubanImageProxy?: DoubanImageProxyOverride,
 ): ImageProps['src'] {
   if (typeof src !== 'string') {
     return src;
   }
-  return resolveImageUrl(src, { wsrvWidth: proxyWidth });
+  return resolveImageUrl(src, { wsrvWidth: proxyWidth, doubanImageProxy });
+}
+
+function readClientDoubanImageProxy(): DoubanImageProxyOverride | undefined {
+  if (typeof window === 'undefined') return undefined;
+  const runtime = window.RUNTIME_CONFIG ?? {};
+  let storedType: string | null = null;
+  let storedUrl: string | null = null;
+  try {
+    storedType = window.localStorage.getItem('doubanImageProxyType');
+    storedUrl = window.localStorage.getItem('doubanImageProxyUrl');
+  } catch {
+    // localStorage 被禁用时静默回退
+  }
+  return {
+    proxyType: storedType ?? runtime.DOUBAN_IMAGE_PROXY_TYPE ?? undefined,
+    proxyUrl: storedUrl ?? runtime.DOUBAN_IMAGE_PROXY ?? undefined,
+  };
 }
 
 export default function ExternalImage(props: ExternalImageProps) {
@@ -38,17 +60,20 @@ export default function ExternalImage(props: ExternalImageProps) {
     ...rest
   } = props;
 
-  const resolvedSrc = useMemo(
+  // SSR 与首屏渲染只走 process.env 默认值，确保两端 HTML 一致避免 hydration 警告。
+  const ssrSafeSrc = useMemo(
     () => resolveSrc(src, proxyWidth),
     [src, proxyWidth],
   );
-  const [currentSrc, setCurrentSrc] = useState<ImageProps['src']>(resolvedSrc);
+  const [currentSrc, setCurrentSrc] = useState<ImageProps['src']>(ssrSafeSrc);
   const [fallbackApplied, setFallbackApplied] = useState(false);
 
+  // 客户端挂载后再叠加 RUNTIME_CONFIG / localStorage 中的用户/管理员选择。
   useEffect(() => {
-    setCurrentSrc(resolvedSrc);
+    const override = readClientDoubanImageProxy();
+    setCurrentSrc(resolveSrc(src, proxyWidth, override));
     setFallbackApplied(false);
-  }, [resolvedSrc]);
+  }, [src, proxyWidth]);
 
   const handleError = useCallback(
     (e: SyntheticEvent<HTMLImageElement, Event>) => {
