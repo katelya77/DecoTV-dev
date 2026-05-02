@@ -119,7 +119,13 @@ function applyDoubanImageProxy(
         // 没填自定义 URL 就当 direct，避免拼出无效请求
         return parsedUrl.toString();
       }
-      return `${trimmed}${encodeURIComponent(parsedUrl.toString())}`;
+      const target = parsedUrl.toString();
+      // 与 douban.client.ts 的数据代理保持一致：cors-anywhere 走 raw 拼接，
+      // 其他自定义代理统一前缀 + 编码后的 URL（匹配 UI placeholder 的语义）。
+      if (trimmed === 'https://cors-anywhere.com/') {
+        return `${trimmed}${target}`;
+      }
+      return `${trimmed}${encodeURIComponent(target)}`;
     }
 
     default:
