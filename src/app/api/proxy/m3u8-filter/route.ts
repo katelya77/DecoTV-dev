@@ -2,7 +2,8 @@
 
 import { NextResponse } from 'next/server';
 
-import { filterM3U8 } from '@/lib/ad-filter';
+import { DEFAULT_AD_FILTER_CONFIG, filterM3U8 } from '@/lib/ad-filter';
+import { getConfig } from '@/lib/config';
 import { getBaseUrl, resolveUrl } from '@/lib/live';
 
 export const runtime = 'nodejs';
@@ -13,10 +14,49 @@ const DEFAULT_UA =
 
 const FETCH_TIMEOUT_MS = 8000;
 
-function isAdFilterEnabled(): boolean {
+/**
+ * 解析广告过滤是否启用：admin 后台开关 > 环境变量 > 默认开。
+ * 后台未配置时回落到 ENABLE_AD_FILTER；都没配置时默认 true。
+ */
+async function isAdFilterEnabled(): Promise<boolean> {
+  try {
+    const cfg = await getConfig();
+    if (typeof cfg?.AdFilterConfig?.enabled === 'boolean') {
+      return cfg.AdFilterConfig.enabled;
+    }
+  } catch {
+    // ignore - fallback to env
+  }
   const flag = process.env.ENABLE_AD_FILTER;
-  if (flag === undefined) return true; // 默认开
+  if (flag === undefined) return true;
   return flag === 'true' || flag === '1';
+}
+
+/**
+ * 高级用户可通过环境变量重载广告判定阈值（不在管理 UI 暴露）：
+ *   AD_FILTER_MIN_DURATION  / AD_FILTER_MAX_DURATION  / AD_FILTER_MAX_SEGMENTS
+ */
+function buildFilterConfigFromEnv() {
+  const parseNum = (v: string | undefined, fallback: number): number => {
+    if (!v) return fallback;
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+  };
+  return {
+    ...DEFAULT_AD_FILTER_CONFIG,
+    minAdDuration: parseNum(
+      process.env.AD_FILTER_MIN_DURATION,
+      DEFAULT_AD_FILTER_CONFIG.minAdDuration,
+    ),
+    maxAdDuration: parseNum(
+      process.env.AD_FILTER_MAX_DURATION,
+      DEFAULT_AD_FILTER_CONFIG.maxAdDuration,
+    ),
+    maxConsecutiveAdSegments: parseNum(
+      process.env.AD_FILTER_MAX_SEGMENTS,
+      DEFAULT_AD_FILTER_CONFIG.maxConsecutiveAdSegments,
+    ),
+  };
 }
 
 function buildProxyUrl(
@@ -206,8 +246,8 @@ export async function GET(request: Request) {
     const queryDisable =
       searchParams.get('adfilter') === 'false' ||
       searchParams.get('adfilter') === '0';
-    if (isAdFilterEnabled() && !queryDisable) {
-      const result = filterM3U8(absolute);
+    if ((await isAdFilterEnabled()) && !queryDisable) {
+      const result = filterM3U8(absolute, buildFilterConfigFromEnv());
       body = result.filtered;
       adsRemoved = result.adsRemoved;
       adsDuration = result.adsDuration;

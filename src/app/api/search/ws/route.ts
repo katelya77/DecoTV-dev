@@ -167,7 +167,7 @@ export async function GET(request: NextRequest) {
           completedSources++;
 
           if (!streamClosed) {
-            const rewrittenResults = rewriteEpisodesForAdFilterMany(
+            const rewrittenResults = await rewriteEpisodesForAdFilterMany(
               filteredResults,
               request,
             );

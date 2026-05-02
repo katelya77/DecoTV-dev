@@ -18,7 +18,8 @@ type Action =
   | 'batch_disable'
   | 'batch_enable'
   | 'batch_delete'
-  | 'update_adult';
+  | 'update_adult'
+  | 'update_ad_filter';
 
 interface BaseBody {
   action?: Action;
@@ -69,6 +70,7 @@ export async function POST(request: NextRequest) {
       'batch_enable',
       'batch_delete',
       'update_adult',
+      'update_ad_filter',
     ];
     if (!action || !ACTIONS.includes(action)) {
       return NextResponse.json({ error: '参数格式错误' }, { status: 400 });
@@ -141,6 +143,19 @@ export async function POST(request: NextRequest) {
         if (!entry)
           return NextResponse.json({ error: '源不存在' }, { status: 404 });
         entry.is_adult = is_adult || false;
+        break;
+      }
+      case 'update_ad_filter': {
+        const { key, disable_ad_filter } = body as {
+          key?: string;
+          disable_ad_filter?: boolean;
+        };
+        if (!key)
+          return NextResponse.json({ error: '缺少 key 参数' }, { status: 400 });
+        const entry = adminConfig.SourceConfig.find((s) => s.key === key);
+        if (!entry)
+          return NextResponse.json({ error: '源不存在' }, { status: 404 });
+        entry.disable_ad_filter = !!disable_ad_filter;
         break;
       }
       case 'delete': {

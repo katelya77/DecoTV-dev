@@ -166,7 +166,7 @@ export async function GET(request: NextRequest) {
     const result = await getDetailFromApi(apiSite, id);
     const cacheTime = await getCacheTime();
 
-    const finalResult = rewriteEpisodesForAdFilter(result, request);
+    const finalResult = await rewriteEpisodesForAdFilter(result, request);
 
     return NextResponse.json(finalResult, {
       headers: {

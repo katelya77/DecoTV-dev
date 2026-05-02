@@ -12,6 +12,7 @@ export interface ApiSite {
   name: string;
   detail?: string;
   is_adult?: boolean; // 标记是否为成人资源
+  disable_ad_filter?: boolean; // 该源不走 m3u8 广告过滤代理
 }
 
 export interface LiveCfg {
@@ -660,6 +661,7 @@ export async function getAvailableApiSites(user?: string): Promise<ApiSite[]> {
         api: s.api,
         detail: s.detail,
         is_adult: s.is_adult,
+        disable_ad_filter: s.disable_ad_filter,
       }));
   }
 
@@ -686,6 +688,7 @@ export async function getAvailableApiSites(user?: string): Promise<ApiSite[]> {
           api: s.api,
           detail: s.detail,
           is_adult: s.is_adult,
+          disable_ad_filter: s.disable_ad_filter,
         }));
     }
   }

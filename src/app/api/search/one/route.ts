@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
         },
       );
     } else {
-      const rewritten = rewriteEpisodesForAdFilterMany(result, request);
+      const rewritten = await rewriteEpisodesForAdFilterMany(result, request);
       return NextResponse.json(
         { results: rewritten },
         {
