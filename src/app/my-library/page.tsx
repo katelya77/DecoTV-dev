@@ -102,6 +102,24 @@ const SOURCE_BADGE_STYLES: Record<ConnectorType, string> = {
   jellyfin:
     'border-sky-300/35 bg-sky-500/80 text-sky-50 shadow-[0_8px_24px_-16px_rgba(14,165,233,0.9)]',
 };
+const HERO_PANEL_CLASS =
+  'rounded-3xl border border-emerald-200/70 bg-linear-to-r from-white/95 via-emerald-50/80 to-teal-100/70 p-5 shadow-[0_16px_48px_-30px_rgba(16,185,129,0.45)] dark:border-emerald-400/20 dark:from-slate-900/92 dark:via-slate-900/88 dark:to-emerald-950/70 dark:shadow-[0_16px_48px_-30px_rgba(16,185,129,0.55)] sm:p-6';
+const SURFACE_PANEL_CLASS =
+  'rounded-2xl border border-slate-200/80 bg-white/85 p-4 shadow-[0_8px_28px_-24px_rgba(14,165,233,0.45)] dark:border-white/10 dark:bg-slate-900/78 dark:shadow-[0_8px_28px_-24px_rgba(14,165,233,0.55)]';
+const FILTER_BUTTON_BASE =
+  'rounded-xl border px-3 py-1.5 text-sm transition-all';
+const FILTER_BUTTON_ACTIVE =
+  'border-emerald-400/60 bg-emerald-100/85 text-emerald-700 shadow-sm dark:border-emerald-300/60 dark:bg-emerald-500/20 dark:text-emerald-200';
+const FILTER_BUTTON_IDLE =
+  'border-slate-200/90 bg-white/85 text-slate-700 hover:border-emerald-300/70 hover:bg-emerald-50/90 hover:text-emerald-700 dark:border-white/10 dark:bg-slate-900/55 dark:text-slate-300 dark:hover:border-emerald-300/30 dark:hover:bg-slate-800/70 dark:hover:text-emerald-200';
+const EMPTY_PANEL_CLASS =
+  'rounded-3xl border border-dashed border-slate-200/90 bg-white/75 px-6 py-10 text-center shadow-sm dark:border-white/10 dark:bg-slate-900/72';
+
+function filterButtonClass(active: boolean): string {
+  return `${FILTER_BUTTON_BASE} ${
+    active ? FILTER_BUTTON_ACTIVE : FILTER_BUTTON_IDLE
+  }`;
+}
 
 function defaultPagination(): PaginationPayload {
   return {
@@ -119,13 +137,13 @@ function LibrarySkeleton() {
       {Array.from({ length: 12 }).map((_, index) => (
         <div
           key={index}
-          className='overflow-hidden rounded-2xl border border-white/10 bg-slate-900/70'
+          className='overflow-hidden rounded-2xl border border-slate-200/80 bg-white/80 dark:border-white/10 dark:bg-slate-900/70'
         >
-          <div className='aspect-2/3 animate-pulse bg-slate-800/80' />
+          <div className='aspect-2/3 animate-pulse bg-slate-200/80 dark:bg-slate-800/80' />
           <div className='space-y-2 p-3'>
-            <div className='h-4 animate-pulse rounded bg-slate-800/80' />
-            <div className='h-3 w-2/3 animate-pulse rounded bg-slate-800/70' />
-            <div className='h-3 w-1/2 animate-pulse rounded bg-slate-800/70' />
+            <div className='h-4 animate-pulse rounded bg-slate-200/80 dark:bg-slate-800/80' />
+            <div className='h-3 w-2/3 animate-pulse rounded bg-slate-200/70 dark:bg-slate-800/70' />
+            <div className='h-3 w-1/2 animate-pulse rounded bg-slate-200/70 dark:bg-slate-800/70' />
           </div>
         </div>
       ))}
@@ -731,10 +749,10 @@ export default function MyLibraryPage() {
     return (
       <div
         key={`${item.connectorId}-${item.sourceItemId}`}
-        className='group overflow-hidden rounded-2xl border border-white/10 bg-slate-900/72 shadow-[0_16px_40px_-28px_rgba(15,23,42,0.8)] transition-all hover:border-emerald-300/30 hover:bg-slate-900/86'
+        className='group overflow-hidden rounded-2xl border border-slate-200/80 bg-white/85 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.28)] transition-all hover:border-emerald-300/60 hover:bg-emerald-50/30 dark:border-white/10 dark:bg-slate-900/72 dark:shadow-[0_16px_40px_-28px_rgba(15,23,42,0.8)] dark:hover:border-emerald-300/30 dark:hover:bg-slate-900/86'
       >
         <Link href={playUrl} className='block'>
-          <div className='relative aspect-2/3 bg-slate-800/70'>
+          <div className='relative aspect-2/3 bg-slate-100 dark:bg-slate-800/70'>
             <ExternalImage
               src={item.poster || POSTER_FALLBACK_SRC}
               alt={item.title}
@@ -757,16 +775,20 @@ export default function MyLibraryPage() {
         </Link>
 
         <div className='space-y-2 p-3'>
-          <div className='line-clamp-2 text-sm font-semibold text-slate-100'>
+          <div className='line-clamp-2 text-sm font-semibold text-slate-900 dark:text-slate-100'>
             {item.title}
           </div>
 
           {metaLine ? (
-            <div className='text-xs text-slate-400'>{metaLine}</div>
+            <div className='text-xs text-slate-500 dark:text-slate-400'>
+              {metaLine}
+            </div>
           ) : null}
 
           {item.libraryName ? (
-            <div className='text-xs text-slate-400'>{item.libraryName}</div>
+            <div className='text-xs text-slate-500 dark:text-slate-400'>
+              {item.libraryName}
+            </div>
           ) : null}
 
           {item.genres && item.genres.length > 0 ? (
@@ -774,7 +796,7 @@ export default function MyLibraryPage() {
               {item.genres.slice(0, 3).map((genre) => (
                 <span
                   key={`${item.id}-${genre}`}
-                  className='inline-flex rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-200'
+                  className='inline-flex rounded-full border border-emerald-300/40 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-200'
                 >
                   {genre}
                 </span>
@@ -783,7 +805,7 @@ export default function MyLibraryPage() {
           ) : null}
 
           {item.overview ? (
-            <p className='line-clamp-2 text-xs leading-5 text-slate-400'>
+            <p className='line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400'>
               {item.overview}
             </p>
           ) : null}
@@ -795,30 +817,30 @@ export default function MyLibraryPage() {
   return (
     <PageLayout activePath='/my-library'>
       <main className='mx-auto max-w-7xl space-y-6 px-4 pb-24 pt-24 sm:px-6'>
-        <section className='rounded-3xl border border-emerald-400/20 bg-linear-to-r from-slate-900/92 via-slate-900/88 to-emerald-950/70 p-5 shadow-[0_16px_48px_-30px_rgba(16,185,129,0.55)] sm:p-6'>
+        <section className={HERO_PANEL_CLASS}>
           <div className='flex flex-wrap items-start justify-between gap-4'>
             <div>
-              <h1 className='text-2xl font-extrabold tracking-tight text-emerald-300'>
+              <h1 className='text-2xl font-extrabold tracking-tight text-emerald-600 dark:text-emerald-300'>
                 我的影库
               </h1>
-              <p className='mt-1 text-sm text-slate-300/90'>
+              <p className='mt-1 text-sm text-slate-600 dark:text-slate-300/90'>
                 聚合已接入的 OpenList、小雅 Alist、Emby、Jellyfin 私人媒体资源，
                 支持按来源、分类和关键词快速浏览。
               </p>
             </div>
-            <div className='inline-flex rounded-full border border-emerald-300/20 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-200'>
+            <div className='inline-flex rounded-full border border-emerald-200/80 bg-emerald-100/80 px-3 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-300/20 dark:bg-emerald-500/10 dark:text-emerald-200'>
               {activeSummary}
             </div>
           </div>
 
           <div className='mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]'>
             <label className='relative'>
-              <Search className='pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400' />
+              <Search className='pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-slate-400' />
               <input
                 value={keyword}
                 onChange={(event) => setKeyword(event.target.value)}
                 placeholder='搜索片名、简介、类型或来源名称...'
-                className='h-11 w-full rounded-xl border border-slate-600/60 bg-slate-900/45 pl-10 pr-4 text-sm text-slate-100 outline-none transition-colors focus:border-emerald-400/60'
+                className='h-11 w-full rounded-xl border border-slate-200/90 bg-white/85 pl-10 pr-4 text-sm text-slate-900 outline-none shadow-sm transition-colors placeholder:text-slate-400 focus:border-emerald-400/70 dark:border-slate-600/60 dark:bg-slate-900/45 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-emerald-400/60'
               />
             </label>
             <button
@@ -836,7 +858,7 @@ export default function MyLibraryPage() {
                   forceRefresh: true,
                 });
               }}
-              className='inline-flex items-center justify-center gap-2 rounded-xl border border-slate-600/70 bg-slate-900/45 px-4 py-2.5 text-sm text-slate-100 transition-colors hover:border-emerald-400/50 hover:text-emerald-200'
+              className='inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-white/85 px-4 py-2.5 text-sm text-slate-700 shadow-sm transition-colors hover:border-emerald-300/70 hover:bg-emerald-50/90 hover:text-emerald-700 dark:border-slate-600/70 dark:bg-slate-900/45 dark:text-slate-100 dark:hover:border-emerald-400/50 dark:hover:bg-slate-800/70 dark:hover:text-emerald-200'
             >
               {refreshing ? (
                 <Loader2 className='h-4 w-4 animate-spin' />
@@ -849,8 +871,8 @@ export default function MyLibraryPage() {
         </section>
 
         {connectors.length > 1 ? (
-          <section className='rounded-2xl border border-white/10 bg-slate-900/78 p-4'>
-            <div className='flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-400'>
+          <section className={SURFACE_PANEL_CLASS}>
+            <div className='flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400'>
               <SlidersHorizontal className='h-4 w-4' />
               来源筛选
             </div>
@@ -862,11 +884,7 @@ export default function MyLibraryPage() {
                   setSelectedSource('all');
                   setSelectedCategory('all');
                 }}
-                className={`rounded-xl border px-3 py-1.5 text-sm transition-all ${
-                  selectedSource === 'all'
-                    ? 'border-emerald-300/60 bg-emerald-500/20 text-emerald-200'
-                    : 'border-white/10 bg-slate-900/55 text-slate-300 hover:border-emerald-300/30 hover:text-emerald-200'
-                }`}
+                className={filterButtonClass(selectedSource === 'all')}
               >
                 全部来源
               </button>
@@ -878,11 +896,7 @@ export default function MyLibraryPage() {
                     setSelectedSource(connector.id);
                     setSelectedCategory('all');
                   }}
-                  className={`rounded-xl border px-3 py-1.5 text-sm transition-all ${
-                    selectedSource === connector.id
-                      ? 'border-emerald-300/60 bg-emerald-500/20 text-emerald-200'
-                      : 'border-white/10 bg-slate-900/55 text-slate-300 hover:border-emerald-300/30 hover:text-emerald-200'
-                  }`}
+                  className={filterButtonClass(selectedSource === connector.id)}
                 >
                   {getConnectorUiLabel(connector, connectors)}
                 </button>
@@ -892,8 +906,8 @@ export default function MyLibraryPage() {
         ) : null}
 
         {categories.length > 0 ? (
-          <section className='rounded-2xl border border-white/10 bg-slate-900/78 p-4'>
-            <div className='flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-400'>
+          <section className={SURFACE_PANEL_CLASS}>
+            <div className='flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400'>
               <SlidersHorizontal className='h-4 w-4' />
               分类浏览
             </div>
@@ -907,11 +921,7 @@ export default function MyLibraryPage() {
                     key={category.key}
                     type='button'
                     onClick={() => setSelectedCategory(category.key)}
-                    className={`rounded-xl border px-3 py-1.5 text-sm transition-all ${
-                      active
-                        ? 'border-emerald-300/60 bg-emerald-500/20 text-emerald-200'
-                        : 'border-white/10 bg-slate-900/55 text-slate-300 hover:border-emerald-300/30 hover:text-emerald-200'
-                    }`}
+                    className={filterButtonClass(active)}
                   >
                     {category.label}
                     <span className='ml-1 text-xs opacity-80'>
@@ -927,15 +937,15 @@ export default function MyLibraryPage() {
         {loading ? <LibrarySkeleton /> : null}
 
         {!loading && error ? (
-          <section className='rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-5 text-sm text-red-100'>
+          <section className='rounded-2xl border border-red-200 bg-red-50 px-4 py-5 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-100'>
             {error}
           </section>
         ) : null}
 
         {!loading && connectorErrors.length > 0 ? (
-          <section className='rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-5 text-sm text-amber-100'>
+          <section className='rounded-2xl border border-amber-200 bg-amber-50 px-4 py-5 text-sm text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-100'>
             <div className='font-semibold'>部分连接加载失败</div>
-            <div className='mt-2 space-y-1 text-amber-50/90'>
+            <div className='mt-2 space-y-1 text-amber-700 dark:text-amber-50/90'>
               {connectorErrors.map((item) => (
                 <p key={item.connectorId}>
                   {item.connectorName}：{item.error}
@@ -946,11 +956,11 @@ export default function MyLibraryPage() {
         ) : null}
 
         {!loading && !error && items.length === 0 ? (
-          <section className='rounded-3xl border border-dashed border-white/10 bg-slate-900/72 px-6 py-10 text-center'>
-            <p className='text-lg font-semibold text-slate-100'>
+          <section className={EMPTY_PANEL_CLASS}>
+            <p className='text-lg font-semibold text-slate-900 dark:text-slate-100'>
               当前条件下没有找到可显示的资源
             </p>
-            <p className='mt-2 text-sm text-slate-400'>
+            <p className='mt-2 text-sm text-slate-500 dark:text-slate-400'>
               可以尝试切换来源、清空搜索关键词，或者前往后台重新扫描私人影库连接。
             </p>
             <div className='mt-4 flex justify-center gap-3'>
@@ -962,13 +972,13 @@ export default function MyLibraryPage() {
                   setKeyword('');
                   setSearchKeyword('');
                 }}
-                className='rounded-xl border border-emerald-300/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-200 transition-colors hover:bg-emerald-500/20'
+                className='rounded-xl border border-emerald-300/50 bg-emerald-50 px-4 py-2 text-sm text-emerald-700 transition-colors hover:bg-emerald-100/80 dark:border-emerald-300/30 dark:bg-emerald-500/10 dark:text-emerald-200 dark:hover:bg-emerald-500/20'
               >
                 清空筛选
               </button>
               <Link
                 href='/admin'
-                className='rounded-xl border border-white/10 bg-slate-900/70 px-4 py-2 text-sm text-slate-200 transition-colors hover:border-emerald-300/30 hover:text-emerald-200'
+                className='rounded-xl border border-slate-200/90 bg-white/85 px-4 py-2 text-sm text-slate-700 transition-colors hover:border-emerald-300/70 hover:bg-emerald-50/90 hover:text-emerald-700 dark:border-white/10 dark:bg-slate-900/70 dark:text-slate-200 dark:hover:border-emerald-300/30 dark:hover:bg-slate-800/70 dark:hover:text-emerald-200'
               >
                 前往后台配置
               </Link>
@@ -983,7 +993,7 @@ export default function MyLibraryPage() {
             </section>
 
             <div className='flex flex-col items-center gap-3'>
-              <p className='text-xs text-slate-400'>
+              <p className='text-xs text-slate-500 dark:text-slate-400'>
                 已显示 {items.length} / {pagination.total} 部资源
               </p>
 
@@ -993,18 +1003,18 @@ export default function MyLibraryPage() {
                   className='flex min-h-14 items-center justify-center'
                 >
                   {loadingMore ? (
-                    <div className='inline-flex items-center gap-2 rounded-xl border border-slate-600/70 bg-slate-900/55 px-5 py-2.5 text-sm text-slate-100'>
+                    <div className='inline-flex items-center gap-2 rounded-xl border border-slate-200/90 bg-white/85 px-5 py-2.5 text-sm text-slate-700 shadow-sm dark:border-slate-600/70 dark:bg-slate-900/55 dark:text-slate-100'>
                       <Loader2 className='h-4 w-4 animate-spin' />
                       正在加载更多资源...
                     </div>
                   ) : (
-                    <div className='rounded-xl border border-dashed border-white/10 bg-slate-900/45 px-5 py-2 text-xs text-slate-400'>
+                    <div className='rounded-xl border border-dashed border-slate-200/90 bg-white/70 px-5 py-2 text-xs text-slate-500 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-400'>
                       下滑到底部会自动加载更多
                     </div>
                   )}
                 </div>
               ) : (
-                <div className='rounded-xl border border-dashed border-white/10 bg-slate-900/45 px-5 py-2 text-xs text-slate-400'>
+                <div className='rounded-xl border border-dashed border-slate-200/90 bg-white/70 px-5 py-2 text-xs text-slate-500 dark:border-white/10 dark:bg-slate-900/45 dark:text-slate-400'>
                   当前来源的资源已经全部加载完成
                 </div>
               )}
