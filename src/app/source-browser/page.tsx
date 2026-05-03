@@ -16,6 +16,7 @@ import { useSourceFilter } from '@/hooks/useSourceFilter';
 import SourceBrowserIcon from '@/components/icons/SourceBrowserIcon';
 import PageLayout from '@/components/PageLayout';
 import VideoCard from '@/components/VideoCard';
+import VirtualizedVideoGrid from '@/components/VirtualizedVideoGrid';
 
 const MAX_GRID_ITEMS = 540;
 const HERO_PANEL_CLASS =
@@ -333,34 +334,35 @@ function SourceBrowserPageClient() {
                   </div>
                 ) : (
                   <div className='mt-4'>
-                    <div className='grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'>
-                      {categoryItems.map((item, index) => (
-                        <div
-                          key={String(
-                            item.vod_id ||
-                              `${item.vod_name || 'item'}-${item.vod_year || ''}-${item.vod_pic || ''}-${index}`,
+                    <VirtualizedVideoGrid
+                      data={categoryItems}
+                      mode='auto'
+                      scrollParent='body'
+                      virtualizationThreshold={36}
+                      overscan={620}
+                      className='grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'
+                      itemClassName='w-full'
+                      itemKey={(item, index) =>
+                        String(
+                          item.vod_id ||
+                            `${item.vod_name || 'item'}-${item.vod_year || ''}-${item.vod_pic || ''}-${index}`,
+                        )
+                      }
+                      renderItem={(item) => (
+                        <VideoCard
+                          id={String(item.vod_id || '')}
+                          source={currentSource}
+                          source_name={currentSourceName}
+                          title={item.vod_name || 'Untitled'}
+                          poster={item.vod_pic || ''}
+                          year={item.vod_year || ''}
+                          douban_id={parseDoubanId(
+                            item.vod_douban_id ?? item.douban_id,
                           )}
-                          className='w-full'
-                          style={{
-                            contentVisibility: 'auto',
-                            containIntrinsicSize: '300px',
-                          }}
-                        >
-                          <VideoCard
-                            id={String(item.vod_id || '')}
-                            source={currentSource}
-                            source_name={currentSourceName}
-                            title={item.vod_name || 'Untitled'}
-                            poster={item.vod_pic || ''}
-                            year={item.vod_year || ''}
-                            douban_id={parseDoubanId(
-                              item.vod_douban_id ?? item.douban_id,
-                            )}
-                            from='search'
-                          />
-                        </div>
-                      ))}
-                    </div>
+                          from='search'
+                        />
+                      )}
+                    />
 
                     <div className='mt-10 flex flex-col items-center gap-4 pb-2'>
                       <div

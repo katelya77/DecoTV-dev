@@ -29,6 +29,7 @@ import DoubanCustomSelector from '@/components/DoubanCustomSelector';
 import DoubanSelector, { SourceCategory } from '@/components/DoubanSelector';
 import PageLayout from '@/components/PageLayout';
 import VideoCard from '@/components/VideoCard';
+import VirtualizedVideoGrid from '@/components/VirtualizedVideoGrid';
 
 import { useGlobalCache } from '@/contexts/GlobalCacheContext';
 
@@ -1222,30 +1223,31 @@ function DoubanPageClient() {
                   {sourceCategoryError}
                 </div>
               )}
-              <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'>
-                {sourceItems.map((item) => (
-                  <div
-                    key={`source-${item.id || item.title}-${item.year || ''}`}
-                    className='w-full'
-                    style={{
-                      contentVisibility: 'auto',
-                      containIntrinsicSize: '300px',
-                    }}
-                  >
-                    <VideoCard
-                      id={item.id}
-                      source={currentSource}
-                      source_name={currentSourceConfig?.name || currentSource}
-                      from='search'
-                      title={item.title}
-                      poster={item.poster}
-                      year={item.year}
-                      douban_id={item.doubanId}
-                      type={type === 'movie' ? 'movie' : ''}
-                    />
-                  </div>
-                ))}
-              </div>
+              <VirtualizedVideoGrid
+                data={sourceItems}
+                mode='auto'
+                scrollParent='body'
+                virtualizationThreshold={36}
+                overscan={620}
+                className='justify-start grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'
+                itemClassName='w-full'
+                itemKey={(item) =>
+                  `source-${item.id || item.title}-${item.year || ''}`
+                }
+                renderItem={(item) => (
+                  <VideoCard
+                    id={item.id}
+                    source={currentSource}
+                    source_name={currentSourceConfig?.name || currentSource}
+                    from='search'
+                    title={item.title}
+                    poster={item.poster}
+                    year={item.year}
+                    douban_id={item.doubanId}
+                    type={type === 'movie' ? 'movie' : ''}
+                  />
+                )}
+              />
             </>
           ) : isSourceMode && sourceCategoryError ? (
             <div className='rounded-xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-200'>
@@ -1262,29 +1264,30 @@ function DoubanPageClient() {
               <p className='text-sm mt-2'>可在上方分类列表中进行选择</p>
             </div>
           ) : doubanData.length > 0 ? (
-            <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'>
-              {doubanData.map((item) => (
-                <div
-                  key={`douban-${item.id || item.title}-${item.year || ''}`}
-                  className='w-full'
-                  style={{
-                    contentVisibility: 'auto',
-                    containIntrinsicSize: '300px',
-                  }}
-                >
-                  <VideoCard
-                    from='douban'
-                    title={item.title}
-                    poster={item.poster}
-                    douban_id={Number(item.id)}
-                    rate={item.rate}
-                    year={item.year}
-                    type={type === 'movie' ? 'movie' : ''}
-                    isBangumi={type === 'anime' && Boolean(selectedWeekday)}
-                  />
-                </div>
-              ))}
-            </div>
+            <VirtualizedVideoGrid
+              data={doubanData}
+              mode='auto'
+              scrollParent='body'
+              virtualizationThreshold={36}
+              overscan={620}
+              className='justify-start grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'
+              itemClassName='w-full'
+              itemKey={(item) =>
+                `douban-${item.id || item.title}-${item.year || ''}`
+              }
+              renderItem={(item) => (
+                <VideoCard
+                  from='douban'
+                  title={item.title}
+                  poster={item.poster}
+                  douban_id={Number(item.id)}
+                  rate={item.rate}
+                  year={item.year}
+                  type={type === 'movie' ? 'movie' : ''}
+                  isBangumi={type === 'anime' && Boolean(selectedWeekday)}
+                />
+              )}
+            />
           ) : (
             <div className='text-center text-gray-500 py-8'>暂无相关内容</div>
           )}

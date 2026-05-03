@@ -859,6 +859,19 @@ html[data-render-mode='lite'] .bg-animated-gradient::before {
   opacity: 0.45;
 }
 
+html[data-render-mode='lite'] .image-placeholder-shimmer,
+html[data-render-mode='lite'] .animate-pulse {
+  animation: none;
+}
+
+html[data-render-mode='lite'] .video-card-root {
+  box-shadow: none;
+}
+
+html[data-render-mode='lite'] .video-card-root * {
+  transition-duration: 120ms;
+}
+
 html[data-render-mode='lite'] .glass-chip {
   backdrop-filter: none;
 }
