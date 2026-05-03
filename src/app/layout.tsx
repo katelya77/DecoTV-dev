@@ -7,6 +7,7 @@ import './globals.css';
 
 import { getConfig } from '@/lib/config';
 
+import { BangumiSubscriptionProvider } from '@/contexts/BangumiSubscriptionContext';
 import { DownloadManagerProvider } from '@/contexts/DownloadManagerContext';
 import { GlobalCacheProvider } from '@/contexts/GlobalCacheContext';
 
@@ -150,14 +151,16 @@ export default async function RootLayout({
             disableTransitionOnChange
           >
             <DownloadManagerProvider>
-              <SiteProvider siteName={siteName} announcement={announcement}>
-                <ParticleBackground />
-                <NavbarGate>
-                  <TopNavbar />
-                </NavbarGate>
-                {children}
-                <GlobalErrorIndicator />
-              </SiteProvider>
+              <BangumiSubscriptionProvider>
+                <SiteProvider siteName={siteName} announcement={announcement}>
+                  <ParticleBackground />
+                  <NavbarGate>
+                    <TopNavbar />
+                  </NavbarGate>
+                  {children}
+                  <GlobalErrorIndicator />
+                </SiteProvider>
+              </BangumiSubscriptionProvider>
             </DownloadManagerProvider>
           </ThemeProvider>
         </GlobalCacheProvider>

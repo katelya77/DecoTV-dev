@@ -3,6 +3,7 @@
 'use client';
 
 import {
+  Bell,
   Check,
   ChevronDown,
   Download,
@@ -22,6 +23,7 @@ import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 import { CURRENT_VERSION } from '@/lib/version';
 import { checkForUpdates, UpdateStatus } from '@/lib/version_check';
 
+import { useBangumiSubscription } from '@/contexts/BangumiSubscriptionContext';
 import { useDownloadManager } from '@/contexts/DownloadManagerContext';
 
 import { VersionPanel } from './VersionPanel';
@@ -34,6 +36,7 @@ interface AuthInfo {
 export const UserMenu: React.FC = () => {
   const router = useRouter();
   const { openManager } = useDownloadManager();
+  const { openManager: openBangumiManager } = useBangumiSubscription();
   const [isOpen, setIsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
@@ -329,6 +332,11 @@ export const UserMenu: React.FC = () => {
     openManager();
   };
 
+  const handleBangumiManager = () => {
+    setIsOpen(false);
+    openBangumiManager();
+  };
+
   const handleChangePassword = () => {
     setIsOpen(false);
     setIsChangePasswordOpen(true);
@@ -598,6 +606,14 @@ export const UserMenu: React.FC = () => {
           >
             <Download className='w-4 h-4 text-slate-500 dark:text-gray-400' />
             <span className='font-medium'>下载管理</span>
+          </button>
+
+          <button
+            onClick={handleBangumiManager}
+            className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-gray-800 transition-colors text-sm'
+          >
+            <Bell className='w-4 h-4 text-slate-500 dark:text-gray-400' />
+            <span className='font-medium'>追番缓存</span>
           </button>
 
           {/* 管理面板按钮 */}

@@ -1219,6 +1219,8 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
         requestReferer,
         requestOrigin,
         requestUa,
+        subscriptionId: request.subscriptionId,
+        episodeNumber: request.episodeNumber,
         status: isM3U8
           ? downloadChannel === 'ffmpeg'
             ? 'queued'
@@ -1237,7 +1239,9 @@ export function DownloadManagerProvider({ children }: { children: ReactNode }) {
       };
 
       upsertTask(task);
-      setIsManagerOpen(true);
+      if (request.openManager !== false) {
+        setIsManagerOpen(true);
+      }
 
       if (isM3U8) {
         if (downloadChannel === 'ffmpeg') {

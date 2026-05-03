@@ -6,7 +6,7 @@
 import Artplayer from 'artplayer';
 import artplayerPluginDanmuku from 'artplayer-plugin-danmuku';
 import Hls from 'hls.js';
-import { Download, Heart, LoaderCircle } from 'lucide-react';
+import { Bell, Download, Heart, LoaderCircle } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -18,6 +18,7 @@ import {
   useState,
 } from 'react';
 
+import { createBangumiSubscriptionId } from '@/lib/bangumi-subscription';
 import {
   deleteFavorite,
   deletePlayRecord,
@@ -51,6 +52,7 @@ import PageLayout from '@/components/PageLayout';
 import type { SkipConfigPanelProps } from '@/components/SkipConfigPanel';
 import Toast from '@/components/Toast';
 
+import { useBangumiSubscription } from '@/contexts/BangumiSubscriptionContext';
 import { useDownloadManager } from '@/contexts/DownloadManagerContext';
 
 const DanmuManualMatchModal = dynamic<DanmuManualMatchModalProps>(
@@ -471,6 +473,13 @@ function PlayPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { enqueueDownload, openManager } = useDownloadManager();
+  const {
+    subscriptions: bangumiSubscriptions,
+    isSubscribed,
+    subscribeFromDetail,
+    unsubscribe,
+    openManager: openBangumiManager,
+  } = useBangumiSubscription();
 
   // -----------------------------------------------------------------------------
   // 状态变量（State）
@@ -485,6 +494,7 @@ function PlayPageClient() {
 
   // 收藏状态
   const [favorited, setFavorited] = useState(false);
+  const [bangumiSubscribed, setBangumiSubscribed] = useState(false);
 
   // 跳过片头片尾配置
   const [skipConfig, setSkipConfig] = useState<{
@@ -2773,6 +2783,15 @@ function PlayPageClient() {
     return unsubscribe;
   }, [currentSource, currentId]);
 
+  useEffect(() => {
+    if (!currentSource || !currentId) {
+      setBangumiSubscribed(false);
+      return;
+    }
+
+    setBangumiSubscribed(isSubscribed(currentSource, currentId));
+  }, [bangumiSubscriptions, currentSource, currentId, isSubscribed]);
+
   // 切换收藏
   const handleToggleFavorite = async () => {
     if (
@@ -2803,6 +2822,45 @@ function PlayPageClient() {
       }
     } catch (err) {
       console.error('切换收藏失败:', err);
+    }
+  };
+
+  const handleToggleBangumiSubscription = async () => {
+    if (
+      !videoTitleRef.current ||
+      !detailRef.current ||
+      !currentSourceRef.current ||
+      !currentIdRef.current
+    ) {
+      showToast('当前影片信息不完整，无法追番', 'error');
+      return;
+    }
+
+    const subscriptionId = createBangumiSubscriptionId(
+      currentSourceRef.current,
+      currentIdRef.current,
+    );
+
+    try {
+      if (bangumiSubscribed) {
+        unsubscribe(subscriptionId);
+        setBangumiSubscribed(false);
+        showToast('已取消追番缓存', 'info');
+        return;
+      }
+
+      await subscribeFromDetail({
+        source: currentSourceRef.current,
+        videoId: currentIdRef.current,
+        fallbackTitle: videoTitleRef.current,
+        detail: detailRef.current,
+        searchTitle,
+      });
+      setBangumiSubscribed(true);
+      showToast('已加入追番缓存', 'success');
+    } catch (err) {
+      console.error('切换追番缓存失败:', err);
+      showToast('追番缓存操作失败', 'error');
     }
   };
 
@@ -4182,6 +4240,25 @@ function PlayPageClient() {
                   className='inline-flex items-center gap-1.5 rounded-lg border border-gray-300/70 bg-white/40 px-3 py-1.5 text-sm text-slate-700 transition hover:bg-white/70 dark:border-gray-600 dark:bg-gray-800/40 dark:text-gray-200 dark:hover:bg-gray-700/60'
                 >
                   打开下载管理
+                </button>
+                <button
+                  type='button'
+                  onClick={handleToggleBangumiSubscription}
+                  className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition ${
+                    bangumiSubscribed
+                      ? 'border-cyan-400/50 bg-cyan-500/15 text-cyan-700 hover:bg-cyan-500/25 dark:text-cyan-200'
+                      : 'border-sky-400/40 bg-sky-500/10 text-sky-700 hover:bg-sky-500/20 dark:text-sky-200'
+                  }`}
+                >
+                  <Bell className='h-4 w-4' />
+                  {bangumiSubscribed ? '取消追番缓存' : '追番缓存'}
+                </button>
+                <button
+                  type='button'
+                  onClick={openBangumiManager}
+                  className='inline-flex items-center gap-1.5 rounded-lg border border-cyan-300/50 bg-cyan-500/10 px-3 py-1.5 text-sm text-cyan-700 transition hover:bg-cyan-500/20 dark:border-cyan-500/40 dark:text-cyan-200'
+                >
+                  追番管理
                 </button>
               </div>
               {/* 剧情简介 */}
