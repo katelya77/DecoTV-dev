@@ -1,16 +1,34 @@
 export const POSTER_FALLBACK_SRC = '/poster-fallback.svg';
 
 const DEFAULT_WSRV_WIDTH = 256;
-const DOUBAN_DIRECT_HOST = 'img.doubanio.cmliussss.net';
-const TIER1_DIRECT_HOSTS = new Set([
-  'img.doubanio.cmliussss.net',
-  'img.doubanio.cmliussss.com',
-  'lain.bgm.tv',
-]);
+const DEFAULT_DOUBAN_IMAGE_PROXY_TYPE = 'cmliussss-cdn-tencent';
+const TIER1_DIRECT_HOSTS = new Set(['lain.bgm.tv']);
 const WSRV_HOSTS = new Set(['wsrv.nl', 'images.weserv.nl']);
+const CMLIUSSSS_TENCENT_HOST = 'img.doubanio.cmliussss.net';
+const CMLIUSSSS_ALI_HOST = 'img.doubanio.cmliussss.com';
+const DOUBAN_IMG3_HOST = 'img3.doubanio.com';
+
+export type DoubanImageProxyType =
+  | 'direct'
+  | 'server'
+  | 'img3'
+  | 'cmliussss-cdn-tencent'
+  | 'cmliussss-cdn-ali'
+  | 'custom';
+
+export interface DoubanImageProxyOverride {
+  proxyType?: string;
+  proxyUrl?: string;
+}
 
 export interface ResolveImageUrlOptions {
   wsrvWidth?: number;
+  /**
+   * 显式覆盖豆瓣图片代理。SSR 与首次客户端渲染保持一致以避免 hydration 不匹配，
+   * 因此调用方应只在 client 端的 effect 中读取 localStorage / RUNTIME_CONFIG
+   * 后再传入；不传时回退到 NEXT_PUBLIC_DOUBAN_IMAGE_PROXY_* 环境变量默认值。
+   */
+  doubanImageProxy?: DoubanImageProxyOverride;
 }
 
 function normalizeWsrvWidth(width?: number): number {
@@ -44,12 +62,76 @@ function isDoubanHost(hostname: string): boolean {
 }
 
 function isDoubanImageHost(hostname: string): boolean {
-  return hostname === 'doubanio.com' || hostname.endsWith('.doubanio.com');
+  return (
+    hostname === 'doubanio.com' ||
+    hostname.endsWith('.doubanio.com') ||
+    hostname === CMLIUSSSS_TENCENT_HOST ||
+    hostname === CMLIUSSSS_ALI_HOST
+  );
 }
 
 function toWsrvUrl(absoluteUrl: string, wsrvWidth: number): string {
   const sanitizedTarget = absoluteUrl.replace(/^https?:\/\//i, '');
   return `https://wsrv.nl/?url=${encodeURIComponent(sanitizedTarget)}&w=${wsrvWidth}&default=blank`;
+}
+
+function getDefaultDoubanImageProxy(): {
+  proxyType: string;
+  proxyUrl: string;
+} {
+  return {
+    proxyType:
+      process.env.NEXT_PUBLIC_DOUBAN_IMAGE_PROXY_TYPE ||
+      DEFAULT_DOUBAN_IMAGE_PROXY_TYPE,
+    proxyUrl: process.env.NEXT_PUBLIC_DOUBAN_IMAGE_PROXY || '',
+  };
+}
+
+function applyDoubanImageProxy(
+  parsedUrl: URL,
+  proxyType: string,
+  proxyUrl: string,
+): string {
+  parsedUrl.protocol = 'https:';
+
+  switch (proxyType as DoubanImageProxyType) {
+    case 'direct':
+      return parsedUrl.toString();
+
+    case 'img3':
+      parsedUrl.hostname = DOUBAN_IMG3_HOST;
+      return parsedUrl.toString();
+
+    case 'cmliussss-cdn-tencent':
+      parsedUrl.hostname = CMLIUSSSS_TENCENT_HOST;
+      return parsedUrl.toString();
+
+    case 'cmliussss-cdn-ali':
+      parsedUrl.hostname = CMLIUSSSS_ALI_HOST;
+      return parsedUrl.toString();
+
+    case 'server':
+      return `/api/image-proxy?url=${encodeURIComponent(parsedUrl.toString())}`;
+
+    case 'custom': {
+      const trimmed = proxyUrl?.trim() ?? '';
+      if (!trimmed) {
+        // 没填自定义 URL 就当 direct，避免拼出无效请求
+        return parsedUrl.toString();
+      }
+      const target = parsedUrl.toString();
+      // 与 douban.client.ts 的数据代理保持一致：cors-anywhere 走 raw 拼接，
+      // 其他自定义代理统一前缀 + 编码后的 URL（匹配 UI placeholder 的语义）。
+      if (trimmed === 'https://cors-anywhere.com/') {
+        return `${trimmed}${target}`;
+      }
+      return `${trimmed}${encodeURIComponent(target)}`;
+    }
+
+    default:
+      parsedUrl.hostname = CMLIUSSSS_TENCENT_HOST;
+      return parsedUrl.toString();
+  }
 }
 
 export function resolveImageUrl(
@@ -88,9 +170,12 @@ export function resolveImageUrl(
   }
 
   if (isDoubanImageHost(hostname)) {
-    parsedUrl.protocol = 'https:';
-    parsedUrl.hostname = DOUBAN_DIRECT_HOST;
-    return parsedUrl.toString();
+    const defaults = getDefaultDoubanImageProxy();
+    const proxyType =
+      options.doubanImageProxy?.proxyType?.trim() || defaults.proxyType;
+    const proxyUrl =
+      options.doubanImageProxy?.proxyUrl ?? defaults.proxyUrl ?? '';
+    return applyDoubanImageProxy(parsedUrl, proxyType, proxyUrl);
   }
 
   if (isDoubanHost(hostname)) {
