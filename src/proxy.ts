@@ -35,6 +35,10 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  if (request.method === 'OPTIONS' && pathname.startsWith('/api/proxy')) {
+    return NextResponse.next();
+  }
+
   const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
 
   if (!process.env.PASSWORD) {
@@ -127,7 +131,20 @@ function handleAuthFailure(
 ): NextResponse {
   // 如果是 API 路由，返回 401 状态码
   if (pathname.startsWith('/api')) {
-    return new NextResponse('Unauthorized', { status: 401 });
+    const headers = new Headers();
+    if (pathname.startsWith('/api/proxy')) {
+      headers.set('Access-Control-Allow-Origin', '*');
+      headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      headers.set(
+        'Access-Control-Allow-Headers',
+        'Content-Type, Range, Origin, Accept',
+      );
+      headers.set(
+        'Access-Control-Expose-Headers',
+        'Content-Length, Content-Range, Accept-Ranges, Content-Type',
+      );
+    }
+    return new NextResponse('Unauthorized', { status: 401, headers });
   }
 
   // 否则重定向到登录页面

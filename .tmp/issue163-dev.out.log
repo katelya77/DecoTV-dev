@@ -1,0 +1,27 @@
+
+> decotv@1.4.0 dev C:\Users\Katelya\Documents\VScode\DecoTV\DecoTV
+> pnpm gen:manifest && next dev -H 0.0.0.0
+
+
+> decotv@1.4.0 gen:manifest C:\Users\Katelya\Documents\VScode\DecoTV\DecoTV
+> node scripts/generate-manifest.js
+
+✅ Generated manifest.json with site name: DecoTV
+▲ Next.js 16.1.0 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://0.0.0.0:3000
+- Experiments (use with caution):
+  · optimizePackageImports
+
+✓ Starting...
+✓ Ready in 1613ms
+[MemoryStorage] 内存存储已初始化（本地模式）
+[MemoryStorage] 管理员配置已更新，视频源数量: 0
+ HEAD /warning 200 in 1314ms (compile: 1080ms, render: 235ms)
+✓ Compiled in 155ms
+✓ Compiled in 143ms
+[MemoryStorage] 内存存储已初始化（本地模式）
+ OPTIONS /api/proxy/m3u8 204 in 280ms (compile: 242ms, proxy.ts: 29ms, render: 9ms)
+ OPTIONS /api/proxy/segment 204 in 246ms (compile: 232ms, proxy.ts: 9ms, render: 5ms)
+ OPTIONS /api/proxy/key 204 in 274ms (compile: 257ms, proxy.ts: 9ms, render: 7ms)
+ OPTIONS /api/proxy/stream 204 in 297ms (compile: 285ms, proxy.ts: 9ms, render: 3ms)
