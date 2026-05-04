@@ -1,5 +1,5 @@
 /* ================================================================
-   DecoDock — ArtPlayer glassmorphism control bar theme
+   DecoDock — ArtPlayer control bar theme
    Scoped to .art-video-player to avoid polluting other pages.
 
    IMPORTANT: .art-bottom is position:absolute; inset:0 (covers the
@@ -12,16 +12,10 @@
 
 /* --- Design tokens ------------------------------------------------ */
 :root {
-  --deco-dock-bg: rgba(8, 10, 16, 0.58);
+  --deco-dock-bg: rgba(8, 10, 16, 0.7);
   --deco-dock-border: rgba(255, 255, 255, 0.12);
-  --deco-dock-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
-  --deco-dock-blur: 18px;
   --deco-dock-radius: 16px;
-  --deco-aurora-from: #22c55e;
-  --deco-aurora-mid: #06b6d4;
-  --deco-aurora-to: #a78bfa;
-  --deco-glow-green: rgba(34, 197, 94, 0.35);
-  --deco-glow-cyan: rgba(6, 182, 212, 0.25);
+  --deco-accent: #06b6d4;
 }
 
 /* --- .art-bottom: clear default gradient, keep layout intact ------- */
@@ -36,11 +30,8 @@
 /* --- Floating capsule dock (.art-controls) ------------------------- */
 .art-video-player .art-controls {
   background: var(--deco-dock-bg) !important;
-  backdrop-filter: blur(var(--deco-dock-blur)) !important;
-  -webkit-backdrop-filter: blur(var(--deco-dock-blur)) !important;
   border: 1px solid var(--deco-dock-border);
   border-radius: var(--deco-dock-radius);
-  box-shadow: var(--deco-dock-shadow);
   margin: 0 0 12px;
   padding: 4px 8px;
   box-sizing: border-box;
@@ -48,16 +39,12 @@
   overflow-y: hidden;
   scrollbar-width: none;
   flex-wrap: nowrap;
-  transition:
-    opacity 0.25s ease,
-    transform 0.25s ease;
 }
 
 .art-video-player .art-controls::-webkit-scrollbar {
   display: none;
 }
 
-/* Prevent flex children from shrinking — enables horizontal scroll */
 .art-video-player .art-controls-left,
 .art-video-player .art-controls-right {
   flex-shrink: 0;
@@ -65,93 +52,41 @@
 
 .art-video-player .art-controls [class^='art-control-'] {
   flex-shrink: 0;
+  border-radius: 8px;
 }
 
-/* --- Aurora progress track ---------------------------------------- */
+/* --- Progress track ------------------------------------------------ */
 
-/* Track container: float above the dock */
 .art-video-player .art-control-progress {
   margin: 0 0 var(--art-bottom-gap);
 }
 
-/* Track background */
 .art-video-player .art-control-progress .art-control-progress-inner {
   background: rgba(255, 255, 255, 0.12) !important;
   border-radius: 999px;
   overflow: hidden;
-  transition: height 0.2s ease;
 }
 
-/* Buffer indicator */
 .art-video-player .art-progress-loaded {
   background: rgba(255, 255, 255, 0.18) !important;
 }
 
-/* Play progress — aurora gradient + glow */
 .art-video-player .art-progress-played {
-  background: linear-gradient(
-    90deg,
-    var(--deco-aurora-from),
-    var(--deco-aurora-mid),
-    var(--deco-aurora-to)
-  ) !important;
-  box-shadow:
-    0 0 8px var(--deco-glow-green),
-    0 0 16px var(--deco-glow-cyan);
+  background: var(--deco-accent) !important;
   border-radius: 999px;
-  transition: box-shadow 0.2s ease;
 }
 
-/* Hover: expand track height */
 .art-video-player .art-control-progress:hover .art-control-progress-inner {
   height: 6px !important;
 }
 
-/* Drag dot */
-.art-video-player .art-progress-indicator {
-  transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
-}
-
-.art-video-player .art-control-progress:hover .art-progress-indicator {
-  transform: scale(1) !important;
-  box-shadow:
-    0 0 10px var(--deco-glow-green),
-    0 0 4px var(--deco-glow-cyan);
-}
-
-/* --- Button hover effects ----------------------------------------- */
-
-.art-video-player .art-controls [class^='art-control-'] {
-  transition:
-    transform 0.15s ease,
-    background 0.15s ease,
-    box-shadow 0.15s ease;
-  border-radius: 8px;
-}
-
-.art-video-player .art-controls [class^='art-control-']:hover {
-  transform: scale(1.08);
-  background: rgba(255, 255, 255, 0.12);
-  box-shadow:
-    0 0 12px var(--deco-glow-green),
-    0 0 4px var(--deco-glow-cyan);
-}
-
-/* Right-side buttons: round transparent */
-.art-video-player .art-controls-right [class^='art-control-'] {
-  border-radius: 999px;
-}
-
-/* --- Danmaku "comment island" ------------------------------------- */
+/* --- Danmaku input ------------------------------------------------- */
 
 .art-video-player .art-danmuku {
   padding: 4px 8px;
   gap: 6px;
 }
 
-/* Input: capsule shape */
 .art-video-player .art-danmuku-send-input,
 .art-video-player .deco-danmaku-input {
   border-radius: 999px !important;
@@ -161,9 +96,6 @@
   padding: 6px 16px !important;
   font-size: 13px !important;
   outline: none;
-  transition:
-    border-color 0.2s ease,
-    box-shadow 0.2s ease;
 }
 
 .art-video-player .art-danmuku-send-input::placeholder,
@@ -171,51 +103,27 @@
   color: rgba(255, 255, 255, 0.4) !important;
 }
 
-/* Focus: aurora gradient border */
 .art-video-player .art-danmuku-send-input:focus,
 .art-video-player .deco-danmaku-input:focus {
-  border-color: var(--deco-aurora-mid) !important;
-  box-shadow:
-    0 0 0 1px var(--deco-aurora-mid),
-    0 0 12px var(--deco-glow-cyan);
+  border-color: var(--deco-accent) !important;
 }
 
-/* Send button: aurora gradient */
 .art-video-player .art-danmuku-send {
-  background: linear-gradient(
-    135deg,
-    var(--deco-aurora-from),
-    var(--deco-aurora-mid)
-  ) !important;
+  background: var(--deco-accent) !important;
   border: none !important;
   border-radius: 999px !important;
   color: #fff !important;
   font-weight: 600;
   padding: 6px 14px !important;
   cursor: pointer;
-  transition:
-    transform 0.15s ease,
-    box-shadow 0.15s ease;
-}
-
-.art-video-player .art-danmuku-send:hover {
-  transform: scale(1.05);
-  box-shadow: 0 0 12px var(--deco-glow-green);
 }
 
 /* --- Time tooltip ------------------------------------------------- */
 
 .art-video-player .art-progress-tip {
-  background: linear-gradient(
-    140deg,
-    rgba(15, 23, 42, 0.92),
-    rgba(30, 41, 59, 0.85)
-  ) !important;
-  backdrop-filter: blur(8px) !important;
-  -webkit-backdrop-filter: blur(8px) !important;
+  background: rgba(15, 23, 42, 0.9) !important;
   border: 1px solid var(--deco-dock-border) !important;
   border-radius: 8px !important;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3) !important;
   color: #fff !important;
   padding: 4px 10px !important;
 }
@@ -225,12 +133,9 @@
 .art-video-player .art-setting-panel,
 .art-video-player .art-volume-panel,
 .art-video-player .art-playback-rate-panel {
-  background: rgba(8, 10, 16, 0.82) !important;
-  backdrop-filter: blur(16px) !important;
-  -webkit-backdrop-filter: blur(16px) !important;
+  background: rgba(8, 10, 16, 0.88) !important;
   border: 1px solid var(--deco-dock-border) !important;
   border-radius: 12px !important;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35) !important;
 }
 
 /* --- Fullscreen adjustments --------------------------------------- */
@@ -268,12 +173,10 @@
     padding: 0 6px;
   }
 
-  /* Hide shortcuts button — no physical keyboard on touch devices */
   .art-video-player .art-controls-right .art-control-deco-shortcuts-btn {
     display: none !important;
   }
 
-  /* Danmaku input adjustments */
   .art-video-player .art-danmuku-send-input,
   .art-video-player .deco-danmaku-input {
     font-size: 14px !important;
@@ -281,7 +184,8 @@
   }
 }
 
-/* --- Small phone (≤480px) — tighter spacing ----------------------- */
+/* --- Small phone (≤480px) ------------------------------------------ */
+
 @media (max-width: 480px) {
   .art-video-player .art-bottom {
     padding: 0 6px;
@@ -300,13 +204,11 @@
     padding: 0 5px;
   }
 
-  /* Compact time display */
   .art-video-player .art-control-time {
     font-size: 11px;
     padding: 0 4px;
   }
 
-  /* Danmaku input: full width on its own line */
   .art-video-player .art-danmuku {
     flex-wrap: wrap;
   }
@@ -320,7 +222,8 @@
   }
 }
 
-/* --- Touch-device landscape (≤500px height) — compact vertical ---- */
+/* --- Touch-device landscape (≤500px height) ------------------------ */
+
 @media (orientation: landscape) and (max-height: 500px) {
   .art-video-player .art-bottom {
     padding: 0 10px;
@@ -339,52 +242,21 @@
     padding: 0 5px;
   }
 
-  /* Compact time display */
   .art-video-player .art-control-time {
     font-size: 11px;
     padding: 0 4px;
   }
 
-  /* Hide shortcuts in landscape too */
   .art-video-player .art-controls-right .art-control-deco-shortcuts-btn {
     display: none !important;
   }
 }
 
 /* --- Touch landscape fullscreen ----------------------------------- */
+
 @media (orientation: landscape) and (max-height: 500px) {
   .art-video-player.art-fullscreen .art-controls {
     margin-bottom: 6px;
-  }
-}
-
-/* --- prefers-reduced-motion --------------------------------------- */
-
-@media (prefers-reduced-motion: reduce) {
-  .art-video-player .art-bottom,
-  .art-video-player .art-controls,
-  .art-video-player .art-controls [class^='art-control-'],
-  .art-video-player .art-progress-played,
-  .art-video-player .art-progress-indicator,
-  .art-video-player .art-danmuku-send-input,
-  .art-video-player .art-danmuku-send {
-    transition: none !important;
-    animation: none !important;
-  }
-
-  .art-video-player .art-controls [class^='art-control-']:hover {
-    box-shadow: none;
-  }
-
-  .art-video-player .art-progress-played {
-    box-shadow: none;
-  }
-
-  .art-video-player .deco-capsule,
-  .art-video-player .deco-speed-boost,
-  .art-video-player .deco-shortcuts-backdrop,
-  .art-video-player .deco-shortcuts-modal {
-    animation: none !important;
   }
 }
 
@@ -400,56 +272,29 @@
   align-items: center;
   gap: 12px;
   padding: 10px 18px;
-  background: var(--deco-dock-bg);
-  backdrop-filter: blur(var(--deco-dock-blur));
-  -webkit-backdrop-filter: blur(var(--deco-dock-blur));
+  background: rgba(8, 10, 16, 0.85);
   border: 1px solid var(--deco-dock-border);
   border-radius: 999px;
-  box-shadow: var(--deco-dock-shadow);
   color: rgba(255, 255, 255, 0.9);
   font-size: 13px;
   z-index: 50;
-  animation: deco-capsule-in 0.3s ease;
-}
-
-@keyframes deco-capsule-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 .art-video-player .deco-capsule-countdown {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-  color: var(--deco-aurora-mid);
+  color: var(--deco-accent);
 }
 
 .art-video-player .deco-capsule-play {
   padding: 5px 14px;
   border-radius: 999px;
   border: none;
-  background: linear-gradient(
-    135deg,
-    var(--deco-aurora-from),
-    var(--deco-aurora-mid)
-  );
+  background: var(--deco-accent);
   color: #fff;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition:
-    transform 0.15s ease,
-    box-shadow 0.15s ease;
-}
-
-.art-video-player .deco-capsule-play:hover {
-  transform: scale(1.05);
-  box-shadow: 0 0 12px var(--deco-glow-green);
 }
 
 .art-video-player .deco-capsule-cancel {
@@ -460,14 +305,10 @@
   color: rgba(255, 255, 255, 0.6);
   font-size: 12px;
   cursor: pointer;
-  transition:
-    color 0.15s ease,
-    border-color 0.15s ease;
 }
 
 .art-video-player .deco-capsule-cancel:hover {
   color: rgba(255, 255, 255, 0.9);
-  border-color: rgba(255, 255, 255, 0.3);
 }
 
 /* ================================================================
@@ -480,28 +321,13 @@
   left: 50%;
   transform: translateX(-50%);
   padding: 6px 16px;
-  background: rgba(8, 10, 16, 0.7);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(8, 10, 16, 0.8);
   border: 1px solid var(--deco-dock-border);
   border-radius: 999px;
-  color: var(--deco-aurora-mid);
+  color: var(--deco-accent);
   font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.02em;
   pointer-events: none;
-  animation: deco-speed-boost-in 0.2s ease;
-}
-
-@keyframes deco-speed-boost-in {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) scale(0.9);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(-50%) scale(1);
-  }
 }
 
 /* ================================================================
@@ -516,41 +342,16 @@
   align-items: center;
   justify-content: center;
   z-index: 60;
-  animation: deco-overlay-in 0.2s ease;
-}
-
-@keyframes deco-overlay-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
 }
 
 .art-video-player .deco-shortcuts-modal {
-  background: rgba(8, 10, 16, 0.92);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: rgba(8, 10, 16, 0.95);
   border: 1px solid var(--deco-dock-border);
   border-radius: 16px;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
   width: min(420px, 90%);
   max-height: 80%;
   overflow-y: auto;
   color: #fff;
-  animation: deco-modal-in 0.25s ease;
-}
-
-@keyframes deco-modal-in {
-  from {
-    opacity: 0;
-    transform: scale(0.95) translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
 }
 
 .art-video-player .deco-shortcuts-header {
@@ -570,7 +371,6 @@
   font-size: 20px;
   cursor: pointer;
   padding: 0 4px;
-  transition: color 0.15s ease;
 }
 
 .art-video-player .deco-shortcuts-close:hover {
@@ -683,7 +483,6 @@
   }
 }
 
-/* Tablet capsule adjustments */
 @media (min-width: 769px) and (max-width: 1024px) {
   .art-video-player .deco-capsule {
     right: 18px;
@@ -691,7 +490,6 @@
   }
 }
 
-/* Landscape: capsule closer to bottom bar */
 @media (orientation: landscape) and (max-height: 500px) {
   .art-video-player .deco-capsule {
     bottom: 54px;
