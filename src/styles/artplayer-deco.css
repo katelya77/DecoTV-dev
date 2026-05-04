@@ -229,11 +229,12 @@
    Responsive Breakpoints
    ================================================================ */
 
-/* --- Scrollable control bar for mobile (≤768px) ------------------- */
-/* Instead of hiding buttons, make the dock horizontally scrollable
+/* --- Mobile + Tablet (≤1024px): scrollable control bar ------------ */
+/* Covers phones (≤768px) AND iPads in portrait (768-1024px).
+   Instead of hiding buttons, make the dock horizontally scrollable
    so all controls remain accessible via swipe. */
 
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .art-video-player .art-bottom {
     padding: 0 8px;
     padding-bottom: max(8px, env(safe-area-inset-bottom));
@@ -265,6 +266,11 @@
     min-height: 40px;
     padding: 0 6px;
     flex-shrink: 0;
+  }
+
+  /* Hide shortcuts button — no physical keyboard on touch devices */
+  .art-video-player .art-controls-right .art-control-deco-shortcuts-btn {
+    display: none !important;
   }
 
   /* Danmaku input adjustments */
@@ -314,7 +320,7 @@
   }
 }
 
-/* --- Mobile landscape (≤500px height) — compact vertical ---------- */
+/* --- Touch-device landscape (≤500px height) — compact vertical ---- */
 @media (orientation: landscape) and (max-height: 500px) {
   .art-video-player .art-bottom {
     padding: 0 10px;
@@ -353,28 +359,17 @@
     font-size: 11px;
     padding: 0 4px;
   }
+
+  /* Hide shortcuts in landscape too */
+  .art-video-player .art-controls-right .art-control-deco-shortcuts-btn {
+    display: none !important;
+  }
 }
 
-/* --- Mobile landscape fullscreen ---------------------------------- */
+/* --- Touch landscape fullscreen ----------------------------------- */
 @media (orientation: landscape) and (max-height: 500px) {
   .art-video-player.art-fullscreen .art-controls {
     margin-bottom: 6px;
-  }
-}
-
-/* --- Tablet (769px – 1024px) -------------------------------------- */
-@media (min-width: 769px) and (max-width: 1024px) {
-  .art-video-player .art-bottom {
-    padding: 0 14px;
-  }
-
-  .art-video-player .art-controls {
-    --deco-dock-radius: 14px;
-    padding: 3px 8px;
-  }
-
-  .art-video-player .art-controls [class^='art-control-'] {
-    padding: 0 7px;
   }
 }
 
