@@ -33,6 +33,7 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import { normalizeDownloadSource } from '@/lib/download-url';
+import { applyDecoDockTheme } from '@/lib/player/decoArtplayerTheme';
 import { SearchResult } from '@/lib/types';
 import { generateCacheKey, globalCache } from '@/lib/unified-cache';
 import { getVideoResolutionFromM3u8 } from '@/lib/utils';
@@ -814,6 +815,7 @@ function PlayPageClient() {
   // Wake Lock 相关
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const mobileMouseSeekCleanupRef = useRef<(() => void) | null>(null);
+  const decoDockCleanupRef = useRef<(() => void) | null>(null);
 
   const [isDanmuManualModalOpen, setIsDanmuManualModalOpen] = useState(false);
   const [manualDanmuOverrides, setManualDanmuOverrides] = useState<
@@ -1937,6 +1939,12 @@ function PlayPageClient() {
   // 清理播放器资源的统一函数
   const cleanupPlayer = () => {
     cleanupMobileMouseSeekPatch();
+
+    // Clean up DecoDock theme before destroying the player
+    if (decoDockCleanupRef.current) {
+      decoDockCleanupRef.current();
+      decoDockCleanupRef.current = null;
+    }
 
     if (artPlayerRef.current) {
       try {
@@ -3333,6 +3341,9 @@ function PlayPageClient() {
           ),
         ],
       });
+
+      // Apply DecoDock glassmorphism theme
+      decoDockCleanupRef.current = applyDecoDockTheme(artPlayerRef.current);
 
       // 监听弹幕设置变更事件，将用户偏好持久化到 localStorage
       artPlayerRef.current.on(

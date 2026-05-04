@@ -1,0 +1,263 @@
+/* ================================================================
+   DecoDock — ArtPlayer glassmorphism control bar theme
+   Scoped to .art-video-player to avoid polluting other pages.
+   ================================================================ */
+
+/* --- Design tokens ------------------------------------------------ */
+:root {
+  --deco-dock-bg: rgba(8, 10, 16, 0.58);
+  --deco-dock-border: rgba(255, 255, 255, 0.12);
+  --deco-dock-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+  --deco-dock-blur: 18px;
+  --deco-dock-radius: 16px;
+  --deco-aurora-from: #22c55e;
+  --deco-aurora-mid: #06b6d4;
+  --deco-aurora-to: #a78bfa;
+  --deco-glow-green: rgba(34, 197, 94, 0.35);
+  --deco-glow-cyan: rgba(6, 182, 212, 0.25);
+}
+
+/* --- Floating capsule dock (.art-bottom) -------------------------- */
+.art-video-player .art-bottom {
+  background: var(--deco-dock-bg) !important;
+  backdrop-filter: blur(var(--deco-dock-blur)) !important;
+  -webkit-backdrop-filter: blur(var(--deco-dock-blur)) !important;
+  border: 1px solid var(--deco-dock-border);
+  border-radius: var(--deco-dock-radius);
+  box-shadow: var(--deco-dock-shadow);
+  margin: 0 12px 12px;
+  padding: 0 8px 6px;
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+
+/* --- Aurora progress track ---------------------------------------- */
+
+/* Track background */
+.art-video-player .art-control-progress .art-control-progress-inner {
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-radius: 999px;
+  overflow: hidden;
+  transition: height 0.2s ease;
+}
+
+/* Buffer indicator */
+.art-video-player .art-progress-loaded {
+  background: rgba(255, 255, 255, 0.18) !important;
+}
+
+/* Play progress — aurora gradient + glow */
+.art-video-player .art-progress-played {
+  background: linear-gradient(
+    90deg,
+    var(--deco-aurora-from),
+    var(--deco-aurora-mid),
+    var(--deco-aurora-to)
+  ) !important;
+  box-shadow:
+    0 0 8px var(--deco-glow-green),
+    0 0 16px var(--deco-glow-cyan);
+  border-radius: 999px;
+  transition: box-shadow 0.2s ease;
+}
+
+/* Hover: expand track height */
+.art-video-player .art-control-progress:hover .art-control-progress-inner {
+  height: 6px !important;
+}
+
+/* Drag dot */
+.art-video-player .art-progress-indicator {
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.art-video-player .art-control-progress:hover .art-progress-indicator {
+  transform: scale(1) !important;
+  box-shadow:
+    0 0 10px var(--deco-glow-green),
+    0 0 4px var(--deco-glow-cyan);
+}
+
+/* --- Button hover effects ----------------------------------------- */
+
+.art-video-player .art-controls [class^='art-control-'] {
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+  border-radius: 8px;
+}
+
+.art-video-player .art-controls [class^='art-control-']:hover {
+  transform: scale(1.08);
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 0 12px var(--deco-glow-green),
+    0 0 4px var(--deco-glow-cyan);
+}
+
+/* Right-side buttons: round transparent */
+.art-video-player .art-controls-right [class^='art-control-'] {
+  border-radius: 999px;
+}
+
+/* --- Danmaku "comment island" ------------------------------------- */
+
+.art-video-player .art-danmuku {
+  padding: 4px 8px;
+  gap: 6px;
+}
+
+/* Input: capsule shape */
+.art-video-player .art-danmuku-send-input,
+.art-video-player .deco-danmaku-input {
+  border-radius: 999px !important;
+  background: rgba(8, 10, 16, 0.65) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #fff !important;
+  padding: 6px 16px !important;
+  font-size: 13px !important;
+  outline: none;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.art-video-player .art-danmuku-send-input::placeholder,
+.art-video-player .deco-danmaku-input::placeholder {
+  color: rgba(255, 255, 255, 0.4) !important;
+}
+
+/* Focus: aurora gradient border */
+.art-video-player .art-danmuku-send-input:focus,
+.art-video-player .deco-danmaku-input:focus {
+  border-color: var(--deco-aurora-mid) !important;
+  box-shadow:
+    0 0 0 1px var(--deco-aurora-mid),
+    0 0 12px var(--deco-glow-cyan);
+}
+
+/* Send button: aurora gradient */
+.art-video-player .art-danmuku-send {
+  background: linear-gradient(
+    135deg,
+    var(--deco-aurora-from),
+    var(--deco-aurora-mid)
+  ) !important;
+  border: none !important;
+  border-radius: 999px !important;
+  color: #fff !important;
+  font-weight: 600;
+  padding: 6px 14px !important;
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.art-video-player .art-danmuku-send:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 12px var(--deco-glow-green);
+}
+
+/* --- Time tooltip ------------------------------------------------- */
+
+.art-video-player .art-progress-tip {
+  background: linear-gradient(
+    140deg,
+    rgba(15, 23, 42, 0.92),
+    rgba(30, 41, 59, 0.85)
+  ) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid var(--deco-dock-border) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3) !important;
+  color: #fff !important;
+  padding: 4px 10px !important;
+}
+
+/* --- Settings & volume panels ------------------------------------- */
+
+.art-video-player .art-setting-panel,
+.art-video-player .art-volume-panel,
+.art-video-player .art-playback-rate-panel {
+  background: rgba(8, 10, 16, 0.82) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid var(--deco-dock-border) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35) !important;
+}
+
+/* --- Fullscreen adjustments --------------------------------------- */
+
+.art-video-player.art-fullscreen .art-bottom {
+  margin: 0 24px 24px;
+}
+
+/* --- Mobile responsive -------------------------------------------- */
+
+@media (max-width: 768px) {
+  .art-video-player .art-bottom {
+    width: calc(100% - 24px);
+    margin: 0 12px max(10px, env(safe-area-inset-bottom));
+    padding: 0 6px 4px;
+    --deco-dock-radius: 12px;
+  }
+
+  .art-video-player .art-controls [class^='art-control-'] {
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  .art-video-player .art-danmuku-send-input,
+  .art-video-player .deco-danmaku-input {
+    font-size: 14px !important;
+    padding: 8px 14px !important;
+  }
+}
+
+/* Landscape compact */
+@media (orientation: landscape) and (max-height: 500px) {
+  .art-video-player .art-bottom {
+    margin-bottom: 4px;
+    --deco-dock-radius: 8px;
+  }
+}
+
+/* Fullscreen mobile landscape */
+.art-video-player.art-fullscreen .art-bottom {
+  margin: 0 16px max(8px, env(safe-area-inset-bottom));
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  .art-video-player.art-fullscreen .art-bottom {
+    margin-bottom: 4px;
+  }
+}
+
+/* --- prefers-reduced-motion --------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .art-video-player .art-bottom,
+  .art-video-player .art-controls [class^='art-control-'],
+  .art-video-player .art-progress-played,
+  .art-video-player .art-progress-indicator,
+  .art-video-player .art-danmuku-send-input,
+  .art-video-player .art-danmuku-send {
+    transition: none !important;
+    animation: none !important;
+  }
+
+  .art-video-player .art-controls [class^='art-control-']:hover {
+    box-shadow: none;
+  }
+
+  .art-video-player .art-progress-played {
+    box-shadow: none;
+  }
+}

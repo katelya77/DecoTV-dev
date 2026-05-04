@@ -27,6 +27,7 @@ import {
   saveFavorite,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import { applyDecoDockTheme } from '@/lib/player/decoArtplayerTheme';
 import { parseCustomTimeFormat } from '@/lib/time';
 
 import CategoryBar from '@/components/CategoryBar';
@@ -506,6 +507,7 @@ function LivePageClient() {
   // 播放器引用
   const artPlayerRef = useRef<any>(null);
   const artRef = useRef<HTMLDivElement | null>(null);
+  const decoDockCleanupRef = useRef<(() => void) | null>(null);
   const flvLibRef = useRef<any>(null);
 
   // 频道列表引用
@@ -1082,6 +1084,12 @@ function LivePageClient() {
 
   // 清理播放器资源的统一函数
   const cleanupPlayer = () => {
+    // Clean up DecoDock theme before destroying the player
+    if (decoDockCleanupRef.current) {
+      decoDockCleanupRef.current();
+      decoDockCleanupRef.current = null;
+    }
+
     // 重置不支持的类型状态
     setUnsupportedType(null);
     setPlaybackIssue(null);
@@ -1867,6 +1875,9 @@ function LivePageClient() {
               '<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MCIgaGVpZ2h0PSI1MCIgdmlld0JveD0iMCAwIDUwIDUwIj48cGF0aCBkPSJNMjUuMjUxIDYuNDYxYy0xMC4zMTggMC0xOC42ODMgOC4zNjUtMTguNjgzIDE4LjY4M2g0LjA2OGMwLTguMDcgNi41NDUtMTQuNjE1IDE0LjYxNS0xNC42MTVWNi40NjF6IiBmaWxsPSIjMDA5Njg4Ij48YW5pbWF0ZVRyYW5zZm9ybSBhdHRyaWJ1dGVOYW1lPSJ0cmFuc2Zvcm0iIGF0dHJpYnV0ZVR5cGU9IlhNTCIgZHVyPSIxcyIgZnJvbT0iMCAyNSAyNSIgcmVwZWF0Q291bnQ9ImluZGVmaW5pdGUiIHRvPSIzNjAgMjUgMjUiIHR5cGU9InJvdGF0ZSIvPjwvcGF0aD48L3N2Zz4=">',
           },
         });
+
+        // Apply DecoDock glassmorphism theme
+        decoDockCleanupRef.current = applyDecoDockTheme(artPlayerRef.current);
 
         const startPlaybackWatchdog = () => {
           clearPlaybackWatchdog();
