@@ -43,6 +43,7 @@
   box-shadow: var(--deco-dock-shadow);
   margin: 0 0 12px;
   padding: 4px 8px;
+  box-sizing: border-box;
   transition:
     opacity 0.25s ease,
     transform 0.25s ease;
@@ -224,46 +225,142 @@
   padding: 0 24px;
 }
 
-/* --- Mobile responsive -------------------------------------------- */
+/* ================================================================
+   Responsive Breakpoints
+   ================================================================ */
 
-@media (max-width: 768px) {
+/* --- Small phone (≤480px) ---------------------------------------- */
+@media (max-width: 480px) {
   .art-video-player .art-bottom {
-    padding: 0 12px;
-    padding-bottom: max(10px, env(safe-area-inset-bottom));
+    padding: 0 6px;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
   }
 
   .art-video-player .art-controls {
-    --deco-dock-radius: 12px;
-    margin-bottom: 0;
+    --deco-dock-radius: 8px;
+    padding: 2px 4px;
+    margin: 0 0 4px;
+    gap: 1px;
   }
 
   .art-video-player .art-controls [class^='art-control-'] {
-    min-width: 36px;
-    min-height: 36px;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0 4px;
+  }
+
+  /* Hide DecoDock-added buttons on small screens */
+  .art-video-player .art-controls-right .art-control-deco-shortcuts-btn,
+  .art-video-player .art-controls-right .art-control-deco-ambient-toggle {
+    display: none !important;
+  }
+
+  /* Compact time display */
+  .art-video-player .art-control-time {
+    font-size: 11px;
+    padding: 0 4px;
+  }
+
+  /* Danmaku input: full width on its own line */
+  .art-video-player .art-danmuku {
+    flex-wrap: wrap;
   }
 
   .art-video-player .art-danmuku-send-input,
   .art-video-player .deco-danmaku-input {
     font-size: 14px !important;
-    padding: 8px 14px !important;
+    padding: 6px 12px !important;
+    min-width: 0;
+    flex: 1;
   }
 }
 
-/* Landscape compact */
-@media (orientation: landscape) and (max-height: 500px) {
-  .art-video-player .art-controls {
-    --deco-dock-radius: 8px;
+/* --- Mobile portrait (≤768px) ------------------------------------- */
+@media (max-width: 768px) {
+  .art-video-player .art-bottom {
+    padding: 0 10px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
   }
 
+  .art-video-player .art-controls {
+    --deco-dock-radius: 10px;
+    padding: 3px 6px;
+    margin: 0 0 6px;
+  }
+
+  .art-video-player .art-controls [class^='art-control-'] {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0 6px;
+  }
+
+  /* Hide DecoDock ambient button on mobile (not essential) */
+  .art-video-player .art-controls-right .art-control-deco-ambient-toggle {
+    display: none !important;
+  }
+
+  /* Danmaku input adjustments */
+  .art-video-player .art-danmuku-send-input,
+  .art-video-player .deco-danmaku-input {
+    font-size: 14px !important;
+    padding: 7px 14px !important;
+  }
+}
+
+/* --- Mobile landscape (≤500px height) ----------------------------- */
+@media (orientation: landscape) and (max-height: 500px) {
   .art-video-player .art-bottom {
+    padding: 0 12px;
     padding-bottom: 4px;
   }
+
+  .art-video-player .art-controls {
+    --deco-dock-radius: 8px;
+    padding: 2px 6px;
+    margin: 0 0 2px;
+  }
+
+  .art-video-player .art-controls [class^='art-control-'] {
+    min-width: 34px;
+    min-height: 34px;
+    padding: 0 5px;
+  }
+
+  /* Hide non-essential in landscape */
+  .art-video-player .art-control-playbackRate,
+  .art-video-player .art-control-airplay,
+  .art-video-player .art-controls-right .art-control-deco-shortcuts-btn,
+  .art-video-player .art-controls-right .art-control-deco-ambient-toggle {
+    display: none !important;
+  }
+
+  /* Compact time display */
+  .art-video-player .art-control-time {
+    font-size: 11px;
+    padding: 0 4px;
+  }
 }
 
-/* Fullscreen mobile landscape */
+/* --- Mobile landscape fullscreen ---------------------------------- */
 @media (orientation: landscape) and (max-height: 500px) {
   .art-video-player.art-fullscreen .art-controls {
-    margin-bottom: 8px;
+    margin-bottom: 6px;
+  }
+}
+
+/* --- Tablet (769px – 1024px) -------------------------------------- */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .art-video-player .art-bottom {
+    padding: 0 14px;
+  }
+
+  .art-video-player .art-controls {
+    --deco-dock-radius: 14px;
+    padding: 3px 8px;
+  }
+
+  .art-video-player .art-controls [class^='art-control-'] {
+    padding: 0 7px;
   }
 }
 
@@ -584,10 +681,52 @@
 
 /* --- Mobile: capsule & shortcuts adjustments ---------------------- */
 
+@media (max-width: 480px) {
+  .art-video-player .deco-capsule {
+    right: 8px;
+    bottom: 60px;
+    font-size: 11px;
+    padding: 6px 10px;
+    gap: 6px;
+  }
+
+  .art-video-player .deco-capsule-play,
+  .art-video-player .deco-capsule-cancel {
+    font-size: 11px;
+    padding: 4px 10px;
+  }
+
+  .art-video-player .deco-speed-boost {
+    font-size: 12px;
+    padding: 4px 12px;
+    top: 10px;
+  }
+
+  .art-video-player .deco-shortcuts-modal {
+    width: 96%;
+    max-height: 65%;
+    border-radius: 12px;
+  }
+
+  .art-video-player .deco-shortcuts-header {
+    padding: 12px 16px 10px;
+    font-size: 14px;
+  }
+
+  .art-video-player .deco-shortcuts-body {
+    padding: 10px 16px 16px;
+  }
+
+  .art-video-player .deco-shortcuts-row {
+    padding: 5px 0;
+    font-size: 12px;
+  }
+}
+
 @media (max-width: 768px) {
   .art-video-player .deco-capsule {
     right: 12px;
-    bottom: 70px;
+    bottom: 66px;
     font-size: 12px;
     padding: 8px 14px;
     gap: 8px;
@@ -596,5 +735,24 @@
   .art-video-player .deco-shortcuts-modal {
     width: 95%;
     max-height: 70%;
+  }
+}
+
+/* Tablet capsule adjustments */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .art-video-player .deco-capsule {
+    right: 18px;
+    bottom: 76px;
+  }
+}
+
+/* Landscape: capsule closer to bottom bar */
+@media (orientation: landscape) and (max-height: 500px) {
+  .art-video-player .deco-capsule {
+    bottom: 54px;
+    right: 10px;
+    font-size: 11px;
+    padding: 6px 12px;
+    gap: 6px;
   }
 }

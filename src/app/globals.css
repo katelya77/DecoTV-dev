@@ -1039,6 +1039,21 @@ div[data-media-provider] video {
   }
 }
 
+/* 小屏手机：隐藏更多非核心控件，防止按钮溢出 */
+@media (max-width: 480px) {
+  .art-control-setting {
+    display: none !important;
+  }
+
+  .art-control-playbackRate {
+    display: none !important;
+  }
+
+  .art-control-airplay {
+    display: none !important;
+  }
+}
+
 /* 移动端外接鼠标模式下，增强进度预览 tip 的观感 */
 .art-video-player.art-mobile.art-mobile-mouse-tip
   .art-control-progress
