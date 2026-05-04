@@ -25,3 +25,8 @@
  OPTIONS /api/proxy/segment 204 in 246ms (compile: 232ms, proxy.ts: 9ms, render: 5ms)
  OPTIONS /api/proxy/key 204 in 274ms (compile: 257ms, proxy.ts: 9ms, render: 7ms)
  OPTIONS /api/proxy/stream 204 in 297ms (compile: 285ms, proxy.ts: 9ms, render: 3ms)
+✓ Compiled in 173ms
+[MemoryStorage] 内存存储已初始化（本地模式）
+[MemoryStorage] 管理员配置已更新，视频源数量: 0
+ GET /warning 200 in 684ms (compile: 461ms, render: 222ms)
+ GET /warning 200 in 692ms (compile: 641ms, render: 50ms)

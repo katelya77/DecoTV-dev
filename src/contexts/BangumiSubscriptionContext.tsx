@@ -22,6 +22,7 @@ import {
   loadBangumiSubscriptions,
   saveBangumiSubscriptions,
 } from '@/lib/bangumi-subscription';
+import { normalizeDownloadSource } from '@/lib/download-url';
 import { SearchResult } from '@/lib/types';
 
 import type { BangumiSubscriptionModalProps } from '@/components/BangumiSubscriptionModal';
@@ -105,23 +106,6 @@ async function fetchSubscriptionDetail(
   }
 
   return (await response.json()) as SearchResult;
-}
-
-function normalizeDownloadUrl(rawUrl: string): {
-  sourceUrl: string;
-  referer?: string;
-  origin?: string;
-} {
-  try {
-    const parsed = new URL(rawUrl, window.location.href);
-    return {
-      sourceUrl: parsed.toString(),
-      referer: parsed.toString(),
-      origin: parsed.origin,
-    };
-  } catch {
-    return { sourceUrl: rawUrl };
-  }
 }
 
 function getEpisodeLabel(detail: SearchResult, episodeIndex: number): string {
@@ -302,7 +286,7 @@ export function BangumiSubscriptionProvider({
       if (!rawUrl) return false;
 
       const episodeNumber = episodeIndex + 1;
-      const { sourceUrl, referer, origin } = normalizeDownloadUrl(rawUrl);
+      const { sourceUrl, referer, origin } = normalizeDownloadSource(rawUrl);
       if (hasExistingEpisodeTask(subscription.id, episodeNumber, sourceUrl)) {
         return 'exists';
       }

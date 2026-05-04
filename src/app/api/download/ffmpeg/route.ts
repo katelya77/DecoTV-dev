@@ -20,6 +20,9 @@ type StartActionPayload = {
   sourceUrl: string;
   title: string;
   fileNameHint?: string;
+  referer?: string;
+  origin?: string;
+  ua?: string;
 };
 
 type UpdateActionPayload = {
@@ -48,6 +51,43 @@ function parseHttpUrl(raw: string): string | null {
     return parsed.toString();
   } catch {
     return null;
+  }
+}
+
+function normalizeHeaderValue(raw: string | undefined): string | undefined {
+  const value = raw?.trim();
+  if (!value || /[\r\n]/.test(value)) return undefined;
+  return value;
+}
+
+function getRequestOrigin(request: NextRequest): string {
+  const forwardedProto = request.headers
+    .get('x-forwarded-proto')
+    ?.split(',')[0]
+    .trim();
+  const forwardedHost = request.headers
+    .get('x-forwarded-host')
+    ?.split(',')[0]
+    .trim();
+  const protocol =
+    forwardedProto || request.nextUrl.protocol.replace(':', '') || 'http';
+  const host =
+    forwardedHost || request.headers.get('host') || request.nextUrl.host;
+  return `${protocol}://${host}`;
+}
+
+function shouldForwardSameOriginAuth(
+  request: NextRequest,
+  targetUrl: string,
+): boolean {
+  try {
+    const target = new URL(targetUrl);
+    return (
+      target.origin === getRequestOrigin(request) &&
+      target.pathname.startsWith('/api/')
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -122,6 +162,14 @@ export async function POST(request: NextRequest) {
         sourceUrl,
         title: payload.title.trim(),
         fileNameHint: payload.fileNameHint?.trim(),
+        requestHeaders: {
+          referer: normalizeHeaderValue(payload.referer),
+          origin: normalizeHeaderValue(payload.origin),
+          userAgent: normalizeHeaderValue(payload.ua),
+          cookie: shouldForwardSameOriginAuth(request, sourceUrl)
+            ? normalizeHeaderValue(request.headers.get('cookie') || undefined)
+            : undefined,
+        },
       });
     } catch (error) {
       return NextResponse.json(

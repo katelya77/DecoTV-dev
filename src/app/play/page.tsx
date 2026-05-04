@@ -32,6 +32,7 @@ import {
   saveSkipConfig,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import { normalizeDownloadSource } from '@/lib/download-url';
 import { SearchResult } from '@/lib/types';
 import { generateCacheKey, globalCache } from '@/lib/unified-cache';
 import { getVideoResolutionFromM3u8 } from '@/lib/utils';
@@ -2874,22 +2875,12 @@ function PlayPageClient() {
       detail?.episodes_titles?.[currentEpisodeIndex] ||
       `第${currentEpisodeIndex + 1}集`;
 
-    let normalizedSourceUrl = videoUrl;
-    let referer: string | undefined;
-    let origin: string | undefined;
-    try {
-      const parsedUrl = new URL(videoUrl, window.location.href);
-      normalizedSourceUrl = parsedUrl.toString();
-      referer = parsedUrl.toString();
-      origin = parsedUrl.origin;
-    } catch {
-      // 使用原始地址继续下载
-    }
+    const { sourceUrl, referer, origin } = normalizeDownloadSource(videoUrl);
 
     try {
       await enqueueDownload({
         title: `${videoTitle || detail?.title || '视频'} ${episodeLabel}`,
-        sourceUrl: normalizedSourceUrl,
+        sourceUrl,
         channel,
         referer,
         origin,
