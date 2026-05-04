@@ -119,6 +119,35 @@ function shouldForwardSameOriginAuth(
   }
 }
 
+function buildDockerInternalFetchUrl(
+  request: NextRequest,
+  targetUrl: string,
+): string {
+  if (process.env.DOCKER_ENV !== 'true') {
+    return targetUrl;
+  }
+
+  try {
+    const target = new URL(targetUrl);
+    if (
+      target.origin !== getRequestOrigin(request) ||
+      !target.pathname.startsWith('/api/')
+    ) {
+      return targetUrl;
+    }
+
+    const internal = new URL(target.toString());
+    internal.protocol = 'http:';
+    internal.hostname = '127.0.0.1';
+    internal.port = process.env.PORT || '3000';
+    internal.username = '';
+    internal.password = '';
+    return internal.toString();
+  } catch {
+    return targetUrl;
+  }
+}
+
 function toAbsoluteReferer(input: string | undefined): string | undefined {
   if (!input) return undefined;
   try {
@@ -259,6 +288,7 @@ async function fetchUpstreamWithFallback(
   },
 ): Promise<{ response: Response | null; error: FetchAttemptError | null }> {
   let lastError: FetchAttemptError | null = null;
+  const fetchUrl = buildDockerInternalFetchUrl(request, targetUrl);
 
   for (const variant of options.variants) {
     const headers = buildRequestHeaders(request, {
@@ -273,7 +303,7 @@ async function fetchUpstreamWithFallback(
       const timeoutId = setTimeout(() => controller.abort(), options.timeoutMs);
       let response: Response;
       try {
-        response = await fetch(targetUrl, {
+        response = await fetch(fetchUrl, {
           method: 'GET',
           headers,
           signal: controller.signal,
@@ -388,7 +418,13 @@ export async function GET(request: NextRequest) {
   );
 
   if (response.url) {
-    headers.set('X-Upstream-Url', response.url);
+    headers.set(
+      'X-Upstream-Url',
+      response.url ===
+        buildDockerInternalFetchUrl(request, parsedTarget.toString())
+        ? parsedTarget.toString()
+        : response.url,
+    );
   }
 
   const contentLength = response.headers.get('content-length');

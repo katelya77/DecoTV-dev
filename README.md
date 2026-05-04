@@ -256,6 +256,7 @@ services:
 docker run -d \
   --name decotv \
   -p 3000:3000 \
+  -v decotv-downloads:/app/.cache/ffmpeg-downloads \
   -e PASSWORD=你的管理密码 \
   ghcr.io/decohererk/decotv:latest
 ```
@@ -272,17 +273,22 @@ services:
       - '3000:3000'
     environment:
       - PASSWORD=你的管理密码
+    volumes:
+      - decotv-downloads:/app/.cache/ffmpeg-downloads
+volumes:
+  decotv-downloads:
 ```
 
 #### 重要说明
 
-| 项目        | 说明                                                                 |
-| ----------- | -------------------------------------------------------------------- |
-| ✅ 必需配置 | `PASSWORD` - 管理员登录密码                                          |
-| ❌ 不需要   | `USERNAME`、`NEXT_PUBLIC_STORAGE_TYPE`、任何数据库连接变量           |
-| ❌ 不需要   | `AUTH_SECRET`、`AUTH_URL`（这些是其他认证框架的配置，DecoTV 不使用） |
-| ⚠️ 数据存储 | 所有配置保存在浏览器 localStorage，清除浏览器数据会丢失配置          |
-| ⚠️ 多端同步 | 不支持，每个浏览器独立存储                                           |
+| 项目        | 说明                                                                  |
+| ----------- | --------------------------------------------------------------------- |
+| ✅ 必需配置 | `PASSWORD` - 管理员登录密码                                           |
+| ❌ 不需要   | `USERNAME`、`NEXT_PUBLIC_STORAGE_TYPE`、任何数据库连接变量            |
+| ❌ 不需要   | `AUTH_SECRET`、`AUTH_URL`（这些是其他认证框架的配置，DecoTV 不使用）  |
+| ⚠️ 数据存储 | 所有配置保存在浏览器 localStorage，清除浏览器数据会丢失配置           |
+| ⚠️ 多端同步 | 不支持，每个浏览器独立存储                                            |
+| ⬇️ 下载缓存 | 建议挂载 `/app/.cache/ffmpeg-downloads`，避免容器重建时丢失已转存文件 |
 
 #### 常见问题
 
@@ -510,22 +516,50 @@ Emby / Jellyfin 快速使用：
 ### 2) FFmpeg 转存下载（服务端）
 
 - 在播放页点击 `FFmpeg 转存下载`。
-- 此模式要求部署环境可执行 `ffmpeg`/`ffprobe`（推荐 Docker/VPS）。
-- 在 Vercel 等 Serverless 环境会返回提示：`该功能仅支持 Docker/VPS 部署`。
+- 官方 Docker 镜像已内置 `ffmpeg`/`ffprobe`，VPS Docker 部署可直接使用。
+- 自行构建镜像时请使用本仓库 Dockerfile；非 Docker 手动部署需自行安装 `ffmpeg` 和 `ffprobe`。
+- Vercel 等 Serverless 环境无法稳定运行长时间 FFmpeg 进程，会自动降级为浏览器分片下载。
 
 ### 3) 推荐环境与可选变量
 
 - 推荐：Docker / VPS（稳定支持浏览器下载 + FFmpeg 转存）。
+- 推荐挂载：`/app/.cache/ffmpeg-downloads`，用于保存服务端转存的临时成品文件。
 - 可选变量：
 - `FFMPEG_PATH`：自定义 ffmpeg 可执行路径。
 - `FFPROBE_PATH`：自定义 ffprobe 可执行路径。
 - `FFMPEG_DOWNLOAD_DIR`：服务端转存文件目录。
 - `FFMPEG_ALLOW_SERVERLESS=true`：仅在你明确具备可执行二进制能力时使用。
 
+VPS Docker 持久化示例：
+
+```yml
+services:
+  decotv:
+    image: ghcr.io/decohererk/decotv:latest
+    ports:
+      - '3000:3000'
+    environment:
+      - PASSWORD=你的管理密码
+      - FFMPEG_MAX_CONCURRENT_JOBS=2
+    volumes:
+      - decotv-downloads:/app/.cache/ffmpeg-downloads
+volumes:
+  decotv-downloads:
+```
+
+如果使用宿主机目录绑定，例如 `./downloads:/app/.cache/ffmpeg-downloads`，请确保目录允许容器内 UID `1001` 写入：
+
+```bash
+mkdir -p ./downloads
+sudo chown -R 1001:1001 ./downloads
+```
+
 ### 4) 常见错误排查
 
 - `拉取播放列表失败 (502)`：通常是上游 m3u8 源需要特定 `Referer/Origin`，请确认源可访问，或切换其他源重试。
-- `FFmpeg API request failed (500/501)`：检查部署环境是否安装 FFmpeg；无二进制能力时请改用 `下载当前集`。
+- `FFmpeg API request failed (500/501)`：检查部署环境是否安装 FFmpeg；官方 Docker 镜像应开箱可用，自建镜像请确认 Dockerfile 包含 FFmpeg。
+- `EACCES` / `permission denied`：转存目录不可写；使用上方 named volume，或修正宿主机目录权限。
+- 转存大文件失败：检查 VPS 磁盘空间、反向代理超时和 `FFMPEG_JOB_RETENTION_MS`，必要时降低 `FFMPEG_MAX_CONCURRENT_JOBS`。
 
 ## Roadmap
 

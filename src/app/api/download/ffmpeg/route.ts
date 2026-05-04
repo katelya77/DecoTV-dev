@@ -91,6 +91,35 @@ function shouldForwardSameOriginAuth(
   }
 }
 
+function buildDockerInternalSourceUrl(
+  request: NextRequest,
+  sourceUrl: string,
+): string {
+  if (process.env.DOCKER_ENV !== 'true') {
+    return sourceUrl;
+  }
+
+  try {
+    const target = new URL(sourceUrl);
+    if (
+      target.origin !== getRequestOrigin(request) ||
+      !target.pathname.startsWith('/api/')
+    ) {
+      return sourceUrl;
+    }
+
+    const internal = new URL(target.toString());
+    internal.protocol = 'http:';
+    internal.hostname = '127.0.0.1';
+    internal.port = process.env.PORT || '3000';
+    internal.username = '';
+    internal.password = '';
+    return internal.toString();
+  } catch {
+    return sourceUrl;
+  }
+}
+
 function unauthorized() {
   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 }
@@ -159,7 +188,7 @@ export async function POST(request: NextRequest) {
     let job: FfmpegJobSnapshot;
     try {
       job = await startFfmpegDownload({
-        sourceUrl,
+        sourceUrl: buildDockerInternalSourceUrl(request, sourceUrl),
         title: payload.title.trim(),
         fileNameHint: payload.fileNameHint?.trim(),
         requestHeaders: {
