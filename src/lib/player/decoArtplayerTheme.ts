@@ -10,9 +10,9 @@ export function applyDecoDockTheme(art: Artplayer): () => void {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let originalPlaceholder = '';
 
-  // Mark the bottom dock
-  const bottom = art.template.$bottom;
-  bottom.classList.add('deco-dock-active');
+  // Mark the controls dock
+  const controls = art.template.$controls;
+  controls.classList.add('deco-dock-active');
 
   // Patch danmaku input (may mount async)
   const patchDanmakuInput = () => {
@@ -60,7 +60,7 @@ export function applyDecoDockTheme(art: Artplayer): () => void {
       clearTimeout(timeoutId);
       timeoutId = null;
     }
-    bottom.classList.remove('deco-dock-active');
+    controls.classList.remove('deco-dock-active');
     const input = player.querySelector<HTMLInputElement>(
       '.art-danmuku-send-input',
     );

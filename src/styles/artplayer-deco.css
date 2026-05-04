@@ -1,6 +1,13 @@
 /* ================================================================
    DecoDock — ArtPlayer glassmorphism control bar theme
    Scoped to .art-video-player to avoid polluting other pages.
+
+   IMPORTANT: .art-bottom is position:absolute; inset:0 (covers the
+   entire player). ArtPlayer uses background-size:100% 100px with
+   background-position:bottom to make its gradient only visible at
+   the bottom. We must NOT set a solid background on .art-bottom —
+   instead we style .art-controls (the actual button row) and
+   .art-progress (the progress bar) directly.
    ================================================================ */
 
 /* --- Design tokens ------------------------------------------------ */
@@ -17,22 +24,36 @@
   --deco-glow-cyan: rgba(6, 182, 212, 0.25);
 }
 
-/* --- Floating capsule dock (.art-bottom) -------------------------- */
+/* --- .art-bottom: clear default gradient, keep layout intact ------- */
 .art-video-player .art-bottom {
+  background-image: none !important;
+  background-color: transparent !important;
+  background-size: auto !important;
+  background-position: 0 0 !important;
+  padding: 0 12px;
+}
+
+/* --- Floating capsule dock (.art-controls) ------------------------- */
+.art-video-player .art-controls {
   background: var(--deco-dock-bg) !important;
   backdrop-filter: blur(var(--deco-dock-blur)) !important;
   -webkit-backdrop-filter: blur(var(--deco-dock-blur)) !important;
   border: 1px solid var(--deco-dock-border);
   border-radius: var(--deco-dock-radius);
   box-shadow: var(--deco-dock-shadow);
-  margin: 0 12px 12px;
-  padding: 0 8px 6px;
+  margin: 0 0 12px;
+  padding: 4px 8px;
   transition:
     opacity 0.25s ease,
     transform 0.25s ease;
 }
 
 /* --- Aurora progress track ---------------------------------------- */
+
+/* Track container: float above the dock */
+.art-video-player .art-control-progress {
+  margin: 0 0 var(--art-bottom-gap);
+}
 
 /* Track background */
 .art-video-player .art-control-progress .art-control-progress-inner {
@@ -195,18 +216,25 @@
 
 /* --- Fullscreen adjustments --------------------------------------- */
 
+.art-video-player.art-fullscreen .art-controls {
+  margin-bottom: 24px;
+}
+
 .art-video-player.art-fullscreen .art-bottom {
-  margin: 0 24px 24px;
+  padding: 0 24px;
 }
 
 /* --- Mobile responsive -------------------------------------------- */
 
 @media (max-width: 768px) {
   .art-video-player .art-bottom {
-    width: calc(100% - 24px);
-    margin: 0 12px max(10px, env(safe-area-inset-bottom));
-    padding: 0 6px 4px;
+    padding: 0 12px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+  }
+
+  .art-video-player .art-controls {
     --deco-dock-radius: 12px;
+    margin-bottom: 0;
   }
 
   .art-video-player .art-controls [class^='art-control-'] {
@@ -223,20 +251,19 @@
 
 /* Landscape compact */
 @media (orientation: landscape) and (max-height: 500px) {
-  .art-video-player .art-bottom {
-    margin-bottom: 4px;
+  .art-video-player .art-controls {
     --deco-dock-radius: 8px;
+  }
+
+  .art-video-player .art-bottom {
+    padding-bottom: 4px;
   }
 }
 
 /* Fullscreen mobile landscape */
-.art-video-player.art-fullscreen .art-bottom {
-  margin: 0 16px max(8px, env(safe-area-inset-bottom));
-}
-
 @media (orientation: landscape) and (max-height: 500px) {
-  .art-video-player.art-fullscreen .art-bottom {
-    margin-bottom: 4px;
+  .art-video-player.art-fullscreen .art-controls {
+    margin-bottom: 8px;
   }
 }
 
@@ -244,6 +271,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .art-video-player .art-bottom,
+  .art-video-player .art-controls,
   .art-video-player .art-controls [class^='art-control-'],
   .art-video-player .art-progress-played,
   .art-video-player .art-progress-indicator,
