@@ -1024,7 +1024,7 @@ div[data-media-provider] video {
   background-color: #000 !important; /* 其余区域填充为黑色 */
 }
 
-/* 隐藏移动端竖屏时的 pip 按钮 */
+/* 移动端：隐藏不需要的控件（pip、网页全屏、音量滑块） */
 @media (max-width: 768px) {
   .art-control-pip {
     display: none !important;
@@ -1035,21 +1035,6 @@ div[data-media-provider] video {
   }
 
   .art-control-volume {
-    display: none !important;
-  }
-}
-
-/* 小屏手机：隐藏更多非核心控件，防止按钮溢出 */
-@media (max-width: 480px) {
-  .art-control-setting {
-    display: none !important;
-  }
-
-  .art-control-playbackRate {
-    display: none !important;
-  }
-
-  .art-control-airplay {
     display: none !important;
   }
 }

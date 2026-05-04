@@ -229,30 +229,69 @@
    Responsive Breakpoints
    ================================================================ */
 
-/* --- Small phone (≤480px) ---------------------------------------- */
+/* --- Scrollable control bar for mobile (≤768px) ------------------- */
+/* Instead of hiding buttons, make the dock horizontally scrollable
+   so all controls remain accessible via swipe. */
+
+@media (max-width: 768px) {
+  .art-video-player .art-bottom {
+    padding: 0 8px;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+
+  .art-video-player .art-controls {
+    --deco-dock-radius: 10px;
+    padding: 3px 6px;
+    margin: 0 0 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap;
+  }
+
+  .art-video-player .art-controls::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Prevent flex children from shrinking — force scroll */
+  .art-video-player .art-controls-left,
+  .art-video-player .art-controls-right {
+    flex-shrink: 0;
+  }
+
+  .art-video-player .art-controls [class^='art-control-'] {
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0 6px;
+    flex-shrink: 0;
+  }
+
+  /* Danmaku input adjustments */
+  .art-video-player .art-danmuku-send-input,
+  .art-video-player .deco-danmaku-input {
+    font-size: 14px !important;
+    padding: 7px 14px !important;
+  }
+}
+
+/* --- Small phone (≤480px) — tighter spacing ----------------------- */
 @media (max-width: 480px) {
   .art-video-player .art-bottom {
     padding: 0 6px;
-    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    padding-bottom: max(6px, env(safe-area-inset-bottom));
   }
 
   .art-video-player .art-controls {
     --deco-dock-radius: 8px;
     padding: 2px 4px;
     margin: 0 0 4px;
-    gap: 1px;
   }
 
   .art-video-player .art-controls [class^='art-control-'] {
-    min-width: 32px;
-    min-height: 32px;
-    padding: 0 4px;
-  }
-
-  /* Hide DecoDock-added buttons on small screens */
-  .art-video-player .art-controls-right .art-control-deco-shortcuts-btn,
-  .art-video-player .art-controls-right .art-control-deco-ambient-toggle {
-    display: none !important;
+    min-width: 38px;
+    min-height: 38px;
+    padding: 0 5px;
   }
 
   /* Compact time display */
@@ -275,63 +314,38 @@
   }
 }
 
-/* --- Mobile portrait (≤768px) ------------------------------------- */
-@media (max-width: 768px) {
-  .art-video-player .art-bottom {
-    padding: 0 10px;
-    padding-bottom: max(10px, env(safe-area-inset-bottom));
-  }
-
-  .art-video-player .art-controls {
-    --deco-dock-radius: 10px;
-    padding: 3px 6px;
-    margin: 0 0 6px;
-  }
-
-  .art-video-player .art-controls [class^='art-control-'] {
-    min-width: 36px;
-    min-height: 36px;
-    padding: 0 6px;
-  }
-
-  /* Hide DecoDock ambient button on mobile (not essential) */
-  .art-video-player .art-controls-right .art-control-deco-ambient-toggle {
-    display: none !important;
-  }
-
-  /* Danmaku input adjustments */
-  .art-video-player .art-danmuku-send-input,
-  .art-video-player .deco-danmaku-input {
-    font-size: 14px !important;
-    padding: 7px 14px !important;
-  }
-}
-
-/* --- Mobile landscape (≤500px height) ----------------------------- */
+/* --- Mobile landscape (≤500px height) — compact vertical ---------- */
 @media (orientation: landscape) and (max-height: 500px) {
   .art-video-player .art-bottom {
-    padding: 0 12px;
-    padding-bottom: 4px;
+    padding: 0 10px;
+    padding-bottom: 2px;
   }
 
   .art-video-player .art-controls {
     --deco-dock-radius: 8px;
     padding: 2px 6px;
     margin: 0 0 2px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap;
+  }
+
+  .art-video-player .art-controls::-webkit-scrollbar {
+    display: none;
+  }
+
+  .art-video-player .art-controls-left,
+  .art-video-player .art-controls-right {
+    flex-shrink: 0;
   }
 
   .art-video-player .art-controls [class^='art-control-'] {
-    min-width: 34px;
-    min-height: 34px;
+    min-width: 38px;
+    min-height: 36px;
     padding: 0 5px;
-  }
-
-  /* Hide non-essential in landscape */
-  .art-video-player .art-control-playbackRate,
-  .art-video-player .art-control-airplay,
-  .art-video-player .art-controls-right .art-control-deco-shortcuts-btn,
-  .art-video-player .art-controls-right .art-control-deco-ambient-toggle {
-    display: none !important;
+    flex-shrink: 0;
   }
 
   /* Compact time display */
@@ -391,11 +405,6 @@
   .art-video-player .deco-shortcuts-backdrop,
   .art-video-player .deco-shortcuts-modal {
     animation: none !important;
-  }
-
-  .art-video-player.deco-ambient-active::after {
-    animation: none !important;
-    opacity: 0.35;
   }
 }
 
@@ -516,51 +525,7 @@
 }
 
 /* ================================================================
-   Feature 3: Ambient Mode
-   ================================================================ */
-
-.art-video-player.deco-ambient-active .art-controls {
-  background: rgba(8, 10, 16, 0.35) !important;
-}
-
-.art-video-player.deco-ambient-active .art-danmuku {
-  opacity: 0.5;
-  transition: opacity 0.3s ease;
-}
-
-.art-video-player.deco-ambient-active::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 120px;
-  background: radial-gradient(
-    ellipse 80% 60% at 50% 100%,
-    var(--deco-glow-green),
-    var(--deco-glow-cyan),
-    transparent
-  );
-  opacity: 0.4;
-  pointer-events: none;
-  z-index: 1;
-  animation: deco-ambient-glow 4s ease-in-out infinite alternate;
-}
-
-@keyframes deco-ambient-glow {
-  0% {
-    opacity: 0.3;
-  }
-  50% {
-    opacity: 0.5;
-  }
-  100% {
-    opacity: 0.3;
-  }
-}
-
-/* ================================================================
-   Feature 4: Keyboard Shortcuts Overlay
+   Feature 3: Keyboard Shortcuts Overlay
    ================================================================ */
 
 .art-video-player .deco-shortcuts-backdrop {

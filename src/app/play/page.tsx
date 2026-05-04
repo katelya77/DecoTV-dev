@@ -35,7 +35,6 @@ import {
 import { normalizeDownloadSource } from '@/lib/download-url';
 import {
   applyDecoDockTheme,
-  attachAmbientMode,
   attachLongPressSpeed,
   attachNextEpisodeCountdown,
   attachShortcutsOverlay,
@@ -824,7 +823,6 @@ function PlayPageClient() {
   const decoDockCleanupRef = useRef<(() => void) | null>(null);
   const countdownCleanupRef = useRef<(() => void) | null>(null);
   const speedBoostCleanupRef = useRef<(() => void) | null>(null);
-  const ambientCleanupRef = useRef<(() => void) | null>(null);
   const shortcutsCleanupRef = useRef<(() => void) | null>(null);
   const shortcutsFeatureRef = useRef<{ toggle: () => void } | null>(null);
 
@@ -1956,8 +1954,6 @@ function PlayPageClient() {
     countdownCleanupRef.current = null;
     speedBoostCleanupRef.current?.();
     speedBoostCleanupRef.current = null;
-    ambientCleanupRef.current?.();
-    ambientCleanupRef.current = null;
     shortcutsCleanupRef.current?.();
     shortcutsCleanupRef.current = null;
     shortcutsFeatureRef.current = null;
@@ -3385,9 +3381,6 @@ function PlayPageClient() {
 
       const speedResult = attachLongPressSpeed(artPlayerRef.current);
       speedBoostCleanupRef.current = speedResult.cleanup;
-
-      const ambientResult = attachAmbientMode(artPlayerRef.current);
-      ambientCleanupRef.current = ambientResult.cleanup;
 
       const shortcutsResult = attachShortcutsOverlay(artPlayerRef.current);
       shortcutsCleanupRef.current = shortcutsResult.cleanup;

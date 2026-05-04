@@ -281,64 +281,7 @@ export function attachLongPressSpeed(
   };
 }
 
-// ── Feature 3: Ambient Mode Toggle ─────────────────────────────────
-
-const AMBIENT_KEY = 'decotv_ambient_mode';
-const AMBIENT_CTRL = 'deco-ambient-toggle';
-
-function buildAmbientIcon(active: boolean): string {
-  const glow = active
-    ? 'filter: drop-shadow(0 0 4px rgba(34, 197, 94, 0.6)); color: #22c55e;'
-    : '';
-  return `<i class="art-icon flex" style="transition: all 0.2s ease; ${glow}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></i>`;
-}
-
-export function attachAmbientMode(art: Artplayer): { cleanup: () => void } {
-  let isActive = false;
-  try {
-    isActive = localStorage.getItem(AMBIENT_KEY) === 'true';
-  } catch {
-    /* noop */
-  }
-
-  const player = art.template.$player;
-  if (isActive) player.classList.add('deco-ambient-active');
-
-  art.controls.add({
-    name: AMBIENT_CTRL,
-    position: 'right',
-    index: 3,
-    html: buildAmbientIcon(isActive),
-    tooltip: isActive ? '关闭环境光模式' : '开启环境光模式',
-    click() {
-      isActive = !isActive;
-      if (isActive) {
-        player.classList.add('deco-ambient-active');
-      } else {
-        player.classList.remove('deco-ambient-active');
-      }
-      try {
-        localStorage.setItem(AMBIENT_KEY, String(isActive));
-      } catch {
-        /* noop */
-      }
-      art.controls.update({
-        name: AMBIENT_CTRL,
-        html: buildAmbientIcon(isActive),
-        tooltip: isActive ? '关闭环境光模式' : '开启环境光模式',
-      });
-    },
-  });
-
-  return {
-    cleanup: () => {
-      art.controls.remove(AMBIENT_CTRL);
-      player.classList.remove('deco-ambient-active');
-    },
-  };
-}
-
-// ── Feature 4: Keyboard Shortcuts Overlay ──────────────────────────
+// ── Feature 3: Keyboard Shortcuts Overlay ──────────────────────────
 
 const SHORTCUTS_LAYER = 'deco-shortcuts-overlay';
 const SHORTCUTS_CTRL = 'deco-shortcuts-btn';
@@ -373,13 +316,14 @@ export function attachShortcutsOverlay(art: Artplayer): {
       style: { zIndex: '60' },
       mounted(el) {
         const backdrop = el.querySelector('.deco-shortcuts-backdrop');
+        const modal = el.querySelector('.deco-shortcuts-modal');
         const closeBtn = el.querySelector('.deco-shortcuts-close');
         if (backdrop) {
           art.proxy(
             backdrop as unknown as HTMLDivElement,
             'click',
             (e: Event) => {
-              if (e.target === backdrop) hide();
+              if (!modal || !modal.contains(e.target as Node)) hide();
             },
           );
         }
