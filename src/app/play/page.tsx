@@ -33,7 +33,13 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import { normalizeDownloadSource } from '@/lib/download-url';
-import { applyDecoDockTheme } from '@/lib/player/decoArtplayerTheme';
+import {
+  applyDecoDockTheme,
+  attachAmbientMode,
+  attachLongPressSpeed,
+  attachNextEpisodeCountdown,
+  attachShortcutsOverlay,
+} from '@/lib/player/decoArtplayerTheme';
 import { SearchResult } from '@/lib/types';
 import { generateCacheKey, globalCache } from '@/lib/unified-cache';
 import { getVideoResolutionFromM3u8 } from '@/lib/utils';
@@ -816,6 +822,11 @@ function PlayPageClient() {
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const mobileMouseSeekCleanupRef = useRef<(() => void) | null>(null);
   const decoDockCleanupRef = useRef<(() => void) | null>(null);
+  const countdownCleanupRef = useRef<(() => void) | null>(null);
+  const speedBoostCleanupRef = useRef<(() => void) | null>(null);
+  const ambientCleanupRef = useRef<(() => void) | null>(null);
+  const shortcutsCleanupRef = useRef<(() => void) | null>(null);
+  const shortcutsFeatureRef = useRef<{ toggle: () => void } | null>(null);
 
   const [isDanmuManualModalOpen, setIsDanmuManualModalOpen] = useState(false);
   const [manualDanmuOverrides, setManualDanmuOverrides] = useState<
@@ -1940,7 +1951,16 @@ function PlayPageClient() {
   const cleanupPlayer = () => {
     cleanupMobileMouseSeekPatch();
 
-    // Clean up DecoDock theme before destroying the player
+    // Clean up DecoDock features and theme before destroying the player
+    countdownCleanupRef.current?.();
+    countdownCleanupRef.current = null;
+    speedBoostCleanupRef.current?.();
+    speedBoostCleanupRef.current = null;
+    ambientCleanupRef.current?.();
+    ambientCleanupRef.current = null;
+    shortcutsCleanupRef.current?.();
+    shortcutsCleanupRef.current = null;
+    shortcutsFeatureRef.current = null;
     if (decoDockCleanupRef.current) {
       decoDockCleanupRef.current();
       decoDockCleanupRef.current = null;
@@ -2519,6 +2539,13 @@ function PlayPageClient() {
       (e.target as HTMLElement).tagName === 'TEXTAREA'
     )
       return;
+
+    // ? = toggle shortcuts overlay
+    if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+      shortcutsFeatureRef.current?.toggle();
+      e.preventDefault();
+      return;
+    }
 
     // Alt + 左箭头 = 上一集
     if (e.altKey && e.key === 'ArrowLeft') {
@@ -3345,6 +3372,27 @@ function PlayPageClient() {
       // Apply DecoDock glassmorphism theme
       decoDockCleanupRef.current = applyDecoDockTheme(artPlayerRef.current);
 
+      // --- DecoDock Features ---
+      const countdownResult = attachNextEpisodeCountdown(artPlayerRef.current, {
+        hasNextEpisode: () => {
+          const d = detailRef.current;
+          const idx = currentEpisodeIndexRef.current;
+          return !!(d?.episodes && idx < d.episodes.length - 1);
+        },
+        onNextEpisode: () => handleNextEpisode(),
+      });
+      countdownCleanupRef.current = countdownResult.cleanup;
+
+      const speedResult = attachLongPressSpeed(artPlayerRef.current);
+      speedBoostCleanupRef.current = speedResult.cleanup;
+
+      const ambientResult = attachAmbientMode(artPlayerRef.current);
+      ambientCleanupRef.current = ambientResult.cleanup;
+
+      const shortcutsResult = attachShortcutsOverlay(artPlayerRef.current);
+      shortcutsCleanupRef.current = shortcutsResult.cleanup;
+      shortcutsFeatureRef.current = shortcutsResult;
+
       // 监听弹幕设置变更事件，将用户偏好持久化到 localStorage
       artPlayerRef.current.on(
         'artplayerPluginDanmuku:config' as any,
@@ -3539,6 +3587,8 @@ function PlayPageClient() {
         const d = detailRef.current;
         const idx = currentEpisodeIndexRef.current;
         if (d && d.episodes && idx < d.episodes.length - 1) {
+          // Skip auto-advance if the countdown capsule already handled it
+          if (countdownResult.isCancelled()) return;
           setTimeout(() => {
             setCurrentEpisodeIndex(idx + 1);
           }, 1000);
