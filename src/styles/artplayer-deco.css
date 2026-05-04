@@ -44,9 +44,27 @@
   margin: 0 0 12px;
   padding: 4px 8px;
   box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  flex-wrap: nowrap;
   transition:
     opacity 0.25s ease,
     transform 0.25s ease;
+}
+
+.art-video-player .art-controls::-webkit-scrollbar {
+  display: none;
+}
+
+/* Prevent flex children from shrinking — enables horizontal scroll */
+.art-video-player .art-controls-left,
+.art-video-player .art-controls-right {
+  flex-shrink: 0;
+}
+
+.art-video-player .art-controls [class^='art-control-'] {
+  flex-shrink: 0;
 }
 
 /* --- Aurora progress track ---------------------------------------- */
@@ -229,10 +247,7 @@
    Responsive Breakpoints
    ================================================================ */
 
-/* --- Mobile + Tablet (≤1024px): scrollable control bar ------------ */
-/* Covers phones (≤768px) AND iPads in portrait (768-1024px).
-   Instead of hiding buttons, make the dock horizontally scrollable
-   so all controls remain accessible via swipe. */
+/* --- Mobile + Tablet (≤1024px) ------------------------------------- */
 
 @media (max-width: 1024px) {
   .art-video-player .art-bottom {
@@ -244,28 +259,13 @@
     --deco-dock-radius: 10px;
     padding: 3px 6px;
     margin: 0 0 6px;
-    overflow-x: auto;
-    overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    flex-wrap: nowrap;
-  }
-
-  .art-video-player .art-controls::-webkit-scrollbar {
-    display: none;
-  }
-
-  /* Prevent flex children from shrinking — force scroll */
-  .art-video-player .art-controls-left,
-  .art-video-player .art-controls-right {
-    flex-shrink: 0;
   }
 
   .art-video-player .art-controls [class^='art-control-'] {
     min-width: 40px;
     min-height: 40px;
     padding: 0 6px;
-    flex-shrink: 0;
   }
 
   /* Hide shortcuts button — no physical keyboard on touch devices */
@@ -331,27 +331,12 @@
     --deco-dock-radius: 8px;
     padding: 2px 6px;
     margin: 0 0 2px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    flex-wrap: nowrap;
-  }
-
-  .art-video-player .art-controls::-webkit-scrollbar {
-    display: none;
-  }
-
-  .art-video-player .art-controls-left,
-  .art-video-player .art-controls-right {
-    flex-shrink: 0;
   }
 
   .art-video-player .art-controls [class^='art-control-'] {
     min-width: 38px;
     min-height: 36px;
     padding: 0 5px;
-    flex-shrink: 0;
   }
 
   /* Compact time display */
