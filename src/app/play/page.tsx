@@ -1593,6 +1593,39 @@ function PlayPageClient() {
 
   const ensureVideoSource = (video: HTMLVideoElement | null, url: string) => {
     if (!video || !url) return;
+    const shouldUseNativeSource =
+      !isLikelyHlsUrl(url) || !Hls || !Hls.isSupported();
+    const sources = Array.from(video.getElementsByTagName('source'));
+
+    // Hls.js 通过 MediaSource 注入流。Firefox 对额外的 <source src="*.m3u8">
+    // 会按原生媒体再尝试一次并触发错误，影响真实播放链路。
+    if (!shouldUseNativeSource) {
+      sources.forEach((s) => s.remove());
+      video.removeAttribute('src');
+    } else {
+      const existed = sources.some((s) => s.src === url);
+      if (!existed) {
+        // 移除旧的 source，保持唯一
+        sources.forEach((s) => s.remove());
+        const sourceEl = document.createElement('source');
+        sourceEl.src = url;
+        video.appendChild(sourceEl);
+      }
+    }
+
+    // 始终允许远程播放（AirPlay / Cast）
+    video.disableRemotePlayback = false;
+    // 如果曾经有禁用属性，移除之
+    if (video.hasAttribute('disableRemotePlayback')) {
+      video.removeAttribute('disableRemotePlayback');
+    }
+  };
+
+  const ensureNativeVideoSource = (
+    video: HTMLVideoElement | null,
+    url: string,
+  ) => {
+    if (!video || !url) return;
     const sources = Array.from(video.getElementsByTagName('source'));
     const existed = sources.some((s) => s.src === url);
     if (!existed) {
@@ -1602,10 +1635,7 @@ function PlayPageClient() {
       sourceEl.src = url;
       video.appendChild(sourceEl);
     }
-
-    // 始终允许远程播放（AirPlay / Cast）
     video.disableRemotePlayback = false;
-    // 如果曾经有禁用属性，移除之
     if (video.hasAttribute('disableRemotePlayback')) {
       video.removeAttribute('disableRemotePlayback');
     }
@@ -3046,6 +3076,16 @@ function PlayPageClient() {
               return;
             }
 
+            if (!Hls.isSupported()) {
+              if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = url;
+                ensureNativeVideoSource(video, url);
+              } else {
+                console.error('当前浏览器不支持 HLS 播放');
+              }
+              return;
+            }
+
             if (video.hls) {
               video.hls.destroy();
             }
@@ -3056,7 +3096,7 @@ function PlayPageClient() {
             const hls = new Hls({
               debug: false, // 关闭日志
               enableWorker: true, // WebWorker 解码，降低主线程压力
-              lowLatencyMode: true, // 开启低延迟 LL-HLS
+              lowLatencyMode: false, // 点播场景关闭 LL-HLS，减少小分片调度抖动
 
               /* 缓冲/内存相关 - 根据用户设置动态配置 */
               maxBufferLength: bufferConfig.maxBufferLength,

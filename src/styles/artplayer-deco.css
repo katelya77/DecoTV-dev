@@ -35,8 +35,7 @@
   margin: 0 0 12px;
   padding: 4px 8px;
   box-sizing: border-box;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: visible;
   scrollbar-width: none;
   flex-wrap: nowrap;
 }
@@ -136,6 +135,7 @@
   background: rgba(8, 10, 16, 0.88) !important;
   border: 1px solid var(--deco-dock-border) !important;
   border-radius: 12px !important;
+  z-index: 90 !important;
 }
 
 /* --- Fullscreen adjustments --------------------------------------- */
@@ -164,6 +164,8 @@
     --deco-dock-radius: 10px;
     padding: 3px 6px;
     margin: 0 0 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
   }
 

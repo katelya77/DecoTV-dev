@@ -167,6 +167,8 @@ function shouldSkipAuth(pathname: string): boolean {
     '/screenshot.png',
     '/api/tvbox/config',
     '/api/tvbox/diagnose',
+    '/api/proxy/m3u8-filter',
+    '/api/proxy/m3u8-asset',
     '/register', // 允许访问注册页面
   ];
 

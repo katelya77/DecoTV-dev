@@ -1,7 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { lookup } from 'dns/promises';
-import { isIP } from 'net';
 import { NextResponse } from 'next/server';
 
 import { DEFAULT_AD_FILTER_CONFIG, filterM3U8 } from '@/lib/ad-filter';
@@ -11,6 +9,11 @@ import {
   signM3U8ProxyRequest,
   verifyM3U8ProxySignature,
 } from '@/lib/m3u8-proxy';
+import {
+  fetchWithValidatedRedirects,
+  normalizeHeaderUrl,
+  validateProxyTargetUrl,
+} from '@/lib/proxy-security';
 
 export const runtime = 'nodejs';
 
@@ -89,6 +92,76 @@ function buildProxyUrl(
   return `${protocol}://${host}/api/proxy/m3u8-filter?${qs}`;
 }
 
+function shouldProxyMediaAssets(): boolean {
+  const flag = process.env.M3U8_DIRECT_MEDIA;
+  return !(flag === 'true' || flag === '1');
+}
+
+function inferAssetKind(upstreamUrl: string): 'segment' | 'key' | 'map' {
+  const pathname = (() => {
+    try {
+      return new URL(upstreamUrl).pathname.toLowerCase();
+    } catch {
+      return upstreamUrl.toLowerCase();
+    }
+  })();
+
+  if (pathname.endsWith('.key')) return 'key';
+  if (
+    pathname.endsWith('.mp4') ||
+    pathname.endsWith('.m4s') ||
+    pathname.endsWith('.m4v')
+  ) {
+    return 'map';
+  }
+  return 'segment';
+}
+
+function buildAssetProxyUrl(
+  request: Request,
+  upstreamUrl: string,
+  referer?: string,
+  kind: 'segment' | 'key' | 'map' = inferAssetKind(upstreamUrl),
+): string {
+  const host = request.headers.get('host');
+  const protocol =
+    request.headers.get('x-forwarded-proto') ||
+    (() => {
+      try {
+        return new URL(request.url).protocol.replace(':', '');
+      } catch {
+        return 'http';
+      }
+    })();
+  const signature = signM3U8ProxyRequest(upstreamUrl, referer);
+  if (!signature) return upstreamUrl;
+
+  let qs = `url=${encodeURIComponent(upstreamUrl)}&kind=${kind}`;
+  if (referer) qs += `&referer=${encodeURIComponent(referer)}`;
+  qs += `&sig=${encodeURIComponent(signature)}`;
+  return `${protocol}://${host}/api/proxy/m3u8-asset?${qs}`;
+}
+
+function rewriteUriAttribute(
+  line: string,
+  baseUrl: string,
+  request: Request,
+  referer: string | undefined,
+  target: 'playlist' | 'asset',
+  kind?: 'segment' | 'key' | 'map',
+): string {
+  return line.replace(/URI="([^"]+)"/, (match, uri) => {
+    const resolvedUrl = resolveUrl(baseUrl, uri);
+    const rewrittenUrl =
+      target === 'playlist'
+        ? buildProxyUrl(request, resolvedUrl, referer)
+        : shouldProxyMediaAssets()
+          ? buildAssetProxyUrl(request, resolvedUrl, referer, kind)
+          : resolvedUrl;
+    return match.replace(uri, rewrittenUrl);
+  });
+}
+
 /**
  * 主播放列表（含 #EXT-X-STREAM-INF）：把每个变体 URL 改写为再次走本路由，
  * 这样客户端最终拿到的变体也会被过滤。
@@ -103,7 +176,15 @@ function rewriteMasterPlaylist(
   const out: string[] = [];
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    let line = lines[i];
+
+    if (
+      line.trim().startsWith('#EXT-X-MEDIA:') ||
+      line.trim().startsWith('#EXT-X-I-FRAME-STREAM-INF:')
+    ) {
+      line = rewriteUriAttribute(line, baseUrl, request, referer, 'playlist');
+    }
+
     out.push(line);
 
     if (line.trim().startsWith('#EXT-X-STREAM-INF:')) {
@@ -124,192 +205,69 @@ function rewriteMasterPlaylist(
 }
 
 /**
- * 变体播放列表：把所有相对 URL 解析为上游绝对 URL，让播放器直连上游 CDN
- * 拉 TS（不消耗本服务带宽）。EXT-X-MAP/EXT-X-KEY 同样处理。
+ * 变体播放列表：默认把分片、初始化片段和 key 都改写为同源代理。
+ * Firefox 对跨域 HLS 分片更严格；直连上游 CDN 会导致播放失败或偶发卡顿。
+ * 高级用户如需节省服务端带宽，可设置 M3U8_DIRECT_MEDIA=true 回退直连。
  */
-function absolutizeVariantPlaylist(content: string, baseUrl: string): string {
+function rewriteVariantPlaylist(
+  content: string,
+  baseUrl: string,
+  request: Request,
+  referer?: string,
+): string {
   const lines = content.split('\n');
+  const proxyMedia = shouldProxyMediaAssets();
 
   return lines
     .map((rawLine) => {
       const line = rawLine.trimEnd();
 
-      if (line.startsWith('#EXT-X-MAP:') || line.startsWith('#EXT-X-KEY:')) {
-        return line.replace(/URI="([^"]+)"/, (_, uri) => {
-          return `URI="${resolveUrl(baseUrl, uri)}"`;
-        });
+      if (line.startsWith('#EXT-X-MAP:')) {
+        return rewriteUriAttribute(
+          line,
+          baseUrl,
+          request,
+          referer,
+          'asset',
+          'map',
+        );
+      }
+
+      if (line.startsWith('#EXT-X-KEY:')) {
+        return rewriteUriAttribute(
+          line,
+          baseUrl,
+          request,
+          referer,
+          'asset',
+          'key',
+        );
+      }
+
+      if (
+        line.startsWith('#EXT-X-PART:') ||
+        line.startsWith('#EXT-X-PRELOAD-HINT:')
+      ) {
+        return rewriteUriAttribute(
+          line,
+          baseUrl,
+          request,
+          referer,
+          'asset',
+          'segment',
+        );
       }
 
       if (line && !line.startsWith('#')) {
-        return resolveUrl(baseUrl, line);
+        const resolvedUrl = resolveUrl(baseUrl, line);
+        return proxyMedia
+          ? buildAssetProxyUrl(request, resolvedUrl, referer, 'segment')
+          : resolvedUrl;
       }
 
       return line;
     })
     .join('\n');
-}
-
-async function fetchWithTimeout(
-  url: string,
-  init: RequestInit,
-  timeoutMs: number,
-): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function normalizeHeaderUrl(
-  value: string | null | undefined,
-): string | undefined {
-  if (!value) return undefined;
-  try {
-    const parsed = new URL(value);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      return undefined;
-    }
-    return parsed.toString();
-  } catch {
-    return undefined;
-  }
-}
-
-function normalizeHostname(hostname: string): string {
-  return hostname
-    .toLowerCase()
-    .replace(/^\[|\]$/g, '')
-    .replace(/\.$/, '');
-}
-
-function isBlockedHostname(hostname: string): boolean {
-  return (
-    !hostname ||
-    hostname === 'localhost' ||
-    hostname.endsWith('.localhost') ||
-    hostname === 'metadata.google.internal'
-  );
-}
-
-function isBlockedIPv4(address: string): boolean {
-  const parts = address.split('.').map((part) => Number(part));
-  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part))) {
-    return true;
-  }
-
-  const [a, b, c] = parts;
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    (a === 100 && b >= 64 && b <= 127) ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 192 && b === 0) ||
-    (a === 198 && (b === 18 || b === 19)) ||
-    (a === 224 && b === 0 && c === 0) ||
-    a >= 224
-  );
-}
-
-function isBlockedIPv6(address: string): boolean {
-  const normalized = address.toLowerCase();
-  const mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return isBlockedIPv4(mapped[1]);
-
-  return (
-    normalized === '::' ||
-    normalized === '::1' ||
-    normalized.startsWith('fc') ||
-    normalized.startsWith('fd') ||
-    normalized.startsWith('fe8') ||
-    normalized.startsWith('fe9') ||
-    normalized.startsWith('fea') ||
-    normalized.startsWith('feb') ||
-    normalized.startsWith('ff') ||
-    normalized.startsWith('2001:db8')
-  );
-}
-
-function isBlockedAddress(address: string): boolean {
-  const version = isIP(normalizeHostname(address));
-  if (version === 4) return isBlockedIPv4(address);
-  if (version === 6) return isBlockedIPv6(normalizeHostname(address));
-  return true;
-}
-
-async function validateProxyTargetUrl(rawUrl: string): Promise<string> {
-  let parsed: URL;
-  try {
-    parsed = new URL(rawUrl);
-  } catch {
-    throw new Error('Invalid url');
-  }
-
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error('Only http/https supported');
-  }
-
-  if (parsed.username || parsed.password) {
-    throw new Error('URL credentials are not supported');
-  }
-
-  const hostname = normalizeHostname(parsed.hostname);
-  if (isBlockedHostname(hostname)) {
-    throw new Error('Blocked host');
-  }
-
-  const literalVersion = isIP(hostname);
-  if (literalVersion) {
-    if (isBlockedAddress(hostname)) throw new Error('Blocked IP address');
-    return parsed.toString();
-  }
-
-  const records = await lookup(hostname, { all: true, verbatim: true });
-  if (!records.length) throw new Error('Host did not resolve');
-
-  if (records.some((record) => isBlockedAddress(record.address))) {
-    throw new Error('Host resolves to a blocked IP address');
-  }
-
-  return parsed.toString();
-}
-
-async function fetchPlaylistWithRedirects(
-  rawUrl: string,
-  init: RequestInit,
-  timeoutMs: number,
-): Promise<Response> {
-  let currentUrl = rawUrl;
-
-  for (let i = 0; i <= MAX_REDIRECTS; i++) {
-    const validatedUrl = await validateProxyTargetUrl(currentUrl);
-    const response = await fetchWithTimeout(
-      validatedUrl,
-      { ...init, redirect: 'manual' },
-      timeoutMs,
-    );
-
-    if (
-      response.status >= 300 &&
-      response.status < 400 &&
-      response.headers.has('location')
-    ) {
-      if (i === MAX_REDIRECTS) throw new Error('Too many redirects');
-      const location = response.headers.get('location');
-      if (!location) throw new Error('Redirect location missing');
-      currentUrl = new URL(location, validatedUrl).toString();
-      continue;
-    }
-
-    return response;
-  }
-
-  throw new Error('Too many redirects');
 }
 
 async function readTextWithLimit(
@@ -380,8 +338,8 @@ export async function GET(request: Request) {
 
   // 上游资源站常按 Referer/Origin 做白名单校验。优先级：
   //   1. URL 显式参数 ?referer=...（客户端已知最准确的来源）
-  //   2. 入站请求自带的 Referer（浏览器自然发出的）
-  //   3. 上游 URL 自身的 origin 作为兜底（很多源站允许同源 Referer）
+  //   2. 上游 URL 自身的 origin（很多源站允许同源 Referer）
+  //   3. 入站请求自带的 Referer（最后兜底）
   const sanitizedExplicitReferer = normalizeHeaderUrl(explicitReferer);
   const inboundReferer = normalizeHeaderUrl(request.headers.get('referer'));
   let fallbackReferer: string | undefined;
@@ -391,7 +349,7 @@ export async function GET(request: Request) {
     fallbackReferer = undefined;
   }
   const refererToSend =
-    sanitizedExplicitReferer || inboundReferer || fallbackReferer;
+    sanitizedExplicitReferer || fallbackReferer || inboundReferer;
 
   const upstreamHeaders: Record<string, string> = { 'User-Agent': ua };
   if (refererToSend) {
@@ -405,13 +363,13 @@ export async function GET(request: Request) {
 
   let upstream: Response;
   try {
-    upstream = await fetchPlaylistWithRedirects(
+    upstream = await fetchWithValidatedRedirects(
       decodedUrl,
       {
         cache: 'no-store',
         headers: upstreamHeaders,
       },
-      FETCH_TIMEOUT_MS,
+      { timeoutMs: FETCH_TIMEOUT_MS, maxRedirects: MAX_REDIRECTS },
     );
   } catch (e: any) {
     return NextResponse.json(
@@ -456,19 +414,24 @@ export async function GET(request: Request) {
     // 否则下一跳又会因为没有 Referer 被上游拒
     body = rewriteMasterPlaylist(content, baseUrl, request, refererToSend);
   } else {
-    const absolute = absolutizeVariantPlaylist(content, baseUrl);
+    const rewritten = rewriteVariantPlaylist(
+      content,
+      baseUrl,
+      request,
+      refererToSend,
+    );
     // 调试/对照场景：?adfilter=false 让代理只做 referer 透传 + 相对路径绝对化，
     // 不删任何广告段，方便客户端拿到原始时间轴
     const queryDisable =
       searchParams.get('adfilter') === 'false' ||
       searchParams.get('adfilter') === '0';
     if ((await isAdFilterEnabled()) && !queryDisable) {
-      const result = filterM3U8(absolute, buildFilterConfigFromEnv());
+      const result = filterM3U8(rewritten, buildFilterConfigFromEnv());
       body = result.filtered;
       adsRemoved = result.adsRemoved;
       adsDuration = result.adsDuration;
     } else {
-      body = absolute;
+      body = rewritten;
     }
   }
 

@@ -3033,11 +3033,27 @@ const VideoSourceConfig = ({
                 console.log(`开始检测 ${data.totalSources} 个视频源`);
                 break;
 
+              case 'ping':
+                break;
+
               case 'source_result':
               case 'source_error':
                 // 更新验证结果
                 setValidationResults((prev) => {
                   const existing = prev.find((r) => r.key === data.source);
+                  const message =
+                    data.message ||
+                    (data.status === 'valid'
+                      ? '搜索正常'
+                      : data.status === 'no_results'
+                        ? '无法搜索到结果'
+                        : '连接失败');
+                  const resultCount =
+                    typeof data.resultCount === 'number'
+                      ? data.resultCount
+                      : data.status === 'valid'
+                        ? 1
+                        : 0;
                   if (existing) {
                     return prev.map((r) =>
                       r.key === data.source
@@ -3047,13 +3063,8 @@ const VideoSourceConfig = ({
                               sources.find((s) => s.key === data.source)
                                 ?.name || data.source,
                             status: data.status,
-                            message:
-                              data.status === 'valid'
-                                ? '搜索正常'
-                                : data.status === 'no_results'
-                                  ? '无法搜索到结果'
-                                  : '连接失败',
-                            resultCount: data.status === 'valid' ? 1 : 0,
+                            message,
+                            resultCount,
                           }
                         : r,
                     );
@@ -3066,13 +3077,8 @@ const VideoSourceConfig = ({
                           sources.find((s) => s.key === data.source)?.name ||
                           data.source,
                         status: data.status,
-                        message:
-                          data.status === 'valid'
-                            ? '搜索正常'
-                            : data.status === 'no_results'
-                              ? '无法搜索到结果'
-                              : '连接失败',
-                        resultCount: data.status === 'valid' ? 1 : 0,
+                        message,
+                        resultCount,
                       },
                     ];
                   }
