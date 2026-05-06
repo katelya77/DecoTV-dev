@@ -41,7 +41,10 @@ import {
 } from '@/lib/player/decoArtplayerTheme';
 import { SearchResult } from '@/lib/types';
 import { generateCacheKey, globalCache } from '@/lib/unified-cache';
-import { getVideoResolutionFromM3u8 } from '@/lib/utils';
+import {
+  getVideoResolutionFromM3u8,
+  type VideoSourceTestResult,
+} from '@/lib/utils';
 import { isIOSPlatform, useCast } from '@/hooks/useCast';
 import { type DanmuItem, useDanmu } from '@/hooks/useDanmu';
 import { type DoubanCelebrity, useDoubanInfo } from '@/hooks/useDoubanInfo';
@@ -682,7 +685,7 @@ function PlayPageClient() {
 
   // 保存优选时的测速结果，避免EpisodeSelector重复测速
   const [precomputedVideoInfo, setPrecomputedVideoInfo] = useState<
-    Map<string, { quality: string; loadSpeed: string; pingTime: number }>
+    Map<string, VideoSourceTestResult>
   >(new Map());
 
   // 折叠状态（仅在 lg 及以上屏幕有效）
@@ -1379,37 +1382,41 @@ function PlayPageClient() {
   ): Promise<SearchResult> => {
     if (sources.length === 1) return sources[0];
 
-    // 将播放源均分为两批，并发测速各批，避免一次性过多请求
-    const batchSize = Math.ceil(sources.length / 2);
+    const getTestEpisodeUrl = (source: SearchResult) => {
+      if (!source.episodes || source.episodes.length === 0) return '';
+      return (
+        source.episodes[currentEpisodeIndexRef.current] || source.episodes[0]
+      );
+    };
+
+    // 分批并发测速，避免一次性过多请求拖垮浏览器和上游源站。
+    const batchSize = Math.min(4, Math.max(1, Math.ceil(sources.length / 2)));
     const allResults: Array<{
       source: SearchResult;
-      testResult: { quality: string; loadSpeed: string; pingTime: number };
-    } | null> = [];
+      testResult: VideoSourceTestResult;
+    }> = [];
 
     for (let start = 0; start < sources.length; start += batchSize) {
       const batchSources = sources.slice(start, start + batchSize);
       const batchResults = await Promise.all(
         batchSources.map(async (source) => {
-          try {
-            // 检查是否有第一集的播放地址
-            if (!source.episodes || source.episodes.length === 0) {
-              console.warn(`播放源 ${source.source_name} 没有可用的播放地址`);
-              return null;
-            }
-
-            const episodeUrl =
-              source.episodes.length > 1
-                ? source.episodes[1]
-                : source.episodes[0];
-            const testResult = await getVideoResolutionFromM3u8(episodeUrl);
-
+          const episodeUrl = getTestEpisodeUrl(source);
+          if (!episodeUrl) {
             return {
               source,
-              testResult,
+              testResult: {
+                quality: '未知',
+                loadSpeed: '未知',
+                pingTime: 0,
+                hasError: true,
+                status: 'failed',
+                message: '没有可用播放地址',
+              } satisfies VideoSourceTestResult,
             };
-          } catch {
-            return null;
           }
+
+          const testResult = await getVideoResolutionFromM3u8(episodeUrl);
+          return { source, testResult };
         }),
       );
       allResults.push(...batchResults);
@@ -1417,30 +1424,16 @@ function PlayPageClient() {
 
     // 等待所有测速完成，包含成功和失败的结果
     // 保存所有测速结果到 precomputedVideoInfo，供 EpisodeSelector 使用（包含错误结果）
-    const newVideoInfoMap = new Map<
-      string,
-      {
-        quality: string;
-        loadSpeed: string;
-        pingTime: number;
-        hasError?: boolean;
-      }
-    >();
-    allResults.forEach((result, index) => {
-      const source = sources[index];
-      const sourceKey = `${source.source}-${source.id}`;
-
-      if (result) {
-        // 成功的结果
-        newVideoInfoMap.set(sourceKey, result.testResult);
-      }
+    const newVideoInfoMap = new Map<string, VideoSourceTestResult>();
+    allResults.forEach((result) => {
+      const sourceKey = `${result.source.source}-${result.source.id}`;
+      newVideoInfoMap.set(sourceKey, result.testResult);
     });
 
     // 过滤出成功的结果用于优选计算
-    const successfulResults = allResults.filter(Boolean) as Array<{
-      source: SearchResult;
-      testResult: { quality: string; loadSpeed: string; pingTime: number };
-    }>;
+    const successfulResults = allResults.filter(
+      (result) => !result.testResult.hasError,
+    );
 
     setPrecomputedVideoInfo(newVideoInfoMap);
 
@@ -1451,17 +1444,7 @@ function PlayPageClient() {
 
     // 找出所有有效速度的最大值，用于线性映射
     const validSpeeds = successfulResults
-      .map((result) => {
-        const speedStr = result.testResult.loadSpeed;
-        if (speedStr === '未知' || speedStr === '测量中...') return 0;
-
-        const match = speedStr.match(/^([\d.]+)\s*(KB\/s|MB\/s)$/);
-        if (!match) return 0;
-
-        const value = parseFloat(match[1]);
-        const unit = match[2];
-        return unit === 'MB/s' ? value * 1024 : value; // 统一转换为 KB/s
-      })
+      .map((result) => result.testResult.speedKBps || 0)
       .filter((speed) => speed > 0);
 
     const maxSpeed = validSpeeds.length > 0 ? Math.max(...validSpeeds) : 1024; // 默认1MB/s作为基准
@@ -1504,11 +1487,7 @@ function PlayPageClient() {
 
   // 计算播放源综合评分
   const calculateSourceScore = (
-    testResult: {
-      quality: string;
-      loadSpeed: string;
-      pingTime: number;
-    },
+    testResult: VideoSourceTestResult,
     maxSpeed: number,
     minPing: number,
     maxPing: number,
@@ -1538,16 +1517,8 @@ function PlayPageClient() {
 
     // 下载速度评分 (40% 权重) - 基于最大速度线性映射
     const speedScore = (() => {
-      const speedStr = testResult.loadSpeed;
-      if (speedStr === '未知' || speedStr === '测量中...') return 30;
-
-      // 解析速度值
-      const match = speedStr.match(/^([\d.]+)\s*(KB\/s|MB\/s)$/);
-      if (!match) return 30;
-
-      const value = parseFloat(match[1]);
-      const unit = match[2];
-      const speedKBps = unit === 'MB/s' ? value * 1024 : value;
+      const speedKBps = testResult.speedKBps || 0;
+      if (speedKBps <= 0) return testResult.status === 'partial' ? 45 : 25;
 
       // 基于最大速度线性映射，最高100分
       const speedRatio = speedKBps / maxSpeed;
@@ -1568,6 +1539,10 @@ function PlayPageClient() {
       return Math.min(100, Math.max(0, pingRatio * 100));
     })();
     score += pingScore * 0.2;
+
+    if (testResult.status === 'partial') {
+      score -= 8;
+    }
 
     return Math.round(score * 100) / 100; // 保留两位小数
   };
