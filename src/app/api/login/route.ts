@@ -1,9 +1,16 @@
-/* eslint-disable no-console,@typescript-eslint/no-explicit-any */
+/* eslint-disable no-console */
 import { NextRequest, NextResponse } from 'next/server';
 
+import {
+  AUTH_COOKIE_NAME,
+  getAuthCookieClearOptions,
+  getAuthCookieExpires,
+  getAuthCookieOptions,
+} from '@/lib/auth-cookie';
 import { isPublicMode } from '@/lib/auth-mode';
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
+import { getEffectiveRequestOrigin } from '@/lib/request-protocol';
 
 export const runtime = 'nodejs';
 
@@ -16,39 +23,18 @@ const STORAGE_TYPE =
     | 'kvrocks'
     | undefined) || 'localstorage';
 
-function isSecureRequest(req: NextRequest): boolean {
-  const forwardedProto = req.headers.get('x-forwarded-proto');
-  return (
-    forwardedProto === 'https' ||
-    req.nextUrl.protocol === 'https:' ||
-    process.env.NODE_ENV === 'production'
-  );
-}
-
-function getAuthCookieOptions(req: NextRequest, expires: Date) {
-  const secure = isSecureRequest(req);
-  return {
-    path: '/',
-    expires,
-    sameSite: secure ? ('none' as const) : ('lax' as const),
-    httpOnly: false,
-    secure,
-  };
-}
-
 function withCors(response: NextResponse, req: NextRequest): NextResponse {
   const origin = req.headers.get('origin');
-  response.headers.set('Access-Control-Allow-Origin', origin || '*');
+  if (!origin || origin !== getEffectiveRequestOrigin(req)) {
+    return response;
+  }
+
+  response.headers.set('Access-Control-Allow-Origin', origin);
   response.headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
   response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Cookie');
   response.headers.set('Access-Control-Allow-Credentials', 'true');
+  response.headers.append('Vary', 'Origin');
   return response;
-}
-
-function getAuthCookieExpires(): Date {
-  const expires = new Date();
-  expires.setDate(expires.getDate() + 30);
-  return expires;
 }
 
 // 生成签名
@@ -85,7 +71,13 @@ async function generateAuthCookie(
   role?: 'owner' | 'admin' | 'user',
   includePassword = false,
 ): Promise<string> {
-  const authData: any = { role: role || 'user' };
+  const authData: {
+    role: 'owner' | 'admin' | 'user';
+    password?: string;
+    username?: string;
+    signature?: string;
+    timestamp?: number;
+  } = { role: role || 'user' };
 
   // 只在需要时包含 password
   if (includePassword && password) {
@@ -118,9 +110,11 @@ export async function POST(req: NextRequest) {
         const response = NextResponse.json({ ok: true });
 
         // 清除可能存在的认证cookie
-        response.cookies.set('auth', '', {
-          ...getAuthCookieOptions(req, new Date(0)),
-        });
+        response.cookies.set(
+          AUTH_COOKIE_NAME,
+          '',
+          getAuthCookieClearOptions(req),
+        );
 
         return withCors(response, req);
       }
@@ -147,9 +141,11 @@ export async function POST(req: NextRequest) {
       ); // localstorage 模式包含 password
       const expires = getAuthCookieExpires();
 
-      response.cookies.set('auth', cookieValue, {
-        ...getAuthCookieOptions(req, expires),
-      });
+      response.cookies.set(
+        AUTH_COOKIE_NAME,
+        cookieValue,
+        getAuthCookieOptions(req, expires),
+      );
 
       return withCors(response, req);
     }
@@ -179,9 +175,11 @@ export async function POST(req: NextRequest) {
       ); // 数据库模式不包含 password
       const expires = getAuthCookieExpires();
 
-      response.cookies.set('auth', cookieValue, {
-        ...getAuthCookieOptions(req, expires),
-      });
+      response.cookies.set(
+        AUTH_COOKIE_NAME,
+        cookieValue,
+        getAuthCookieOptions(req, expires),
+      );
 
       return withCors(response, req);
     } else if (username === process.env.USERNAME) {
@@ -214,9 +212,11 @@ export async function POST(req: NextRequest) {
       ); // 数据库模式不包含 password
       const expires = getAuthCookieExpires();
 
-      response.cookies.set('auth', cookieValue, {
-        ...getAuthCookieOptions(req, expires),
-      });
+      response.cookies.set(
+        AUTH_COOKIE_NAME,
+        cookieValue,
+        getAuthCookieOptions(req, expires),
+      );
 
       return withCors(response, req);
     } catch (err) {
