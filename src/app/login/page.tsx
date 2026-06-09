@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
+import { getSafeRedirectPath } from '@/lib/safe-redirect';
 import { CURRENT_VERSION } from '@/lib/version';
 import {
   checkForUpdates,
@@ -224,7 +225,7 @@ function LoginPageClient() {
       });
 
       if (res.ok) {
-        const redirect = searchParams.get('redirect') || '/';
+        const redirect = getSafeRedirectPath(searchParams.get('redirect'));
         router.replace(redirect);
       } else if (res.status === 401) {
         setError('密码错误');
