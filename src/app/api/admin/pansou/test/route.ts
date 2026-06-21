@@ -5,7 +5,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyApiAuth } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import {
-  buildPanSouAuthorizationHeader,
   getDefaultPanSouConfig,
   normalizePanSouConfig,
   normalizePanSouPassword,
@@ -13,6 +12,7 @@ import {
   normalizePanSouToken,
   normalizePanSouUsername,
   resolveActivePanSouNode,
+  resolvePanSouAuthorizationHeader,
   resolvePanSouSearchUrl,
 } from '@/lib/pansou';
 
@@ -174,11 +174,13 @@ export async function POST(request: NextRequest) {
     searchUrl.searchParams.set('res', 'merge');
     searchUrl.searchParams.set('conc', '1');
 
-    const authorization = buildPanSouAuthorizationHeader({
+    const authorization = await resolvePanSouAuthorizationHeader({
+      serverUrl,
       username: node.username,
       password: node.password,
       token: node.token,
       fallbackAuthorization: request.headers.get('authorization'),
+      timeoutMs: 12000,
     });
 
     const headers = new Headers({

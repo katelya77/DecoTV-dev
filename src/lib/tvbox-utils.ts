@@ -62,3 +62,31 @@ export function decodeTvboxId(value: string): TvboxEncodedIdPayload | null {
 
   return null;
 }
+
+function sanitizeTvboxPlayTitle(value: string, fallback: string): string {
+  const normalized = value.replace(/[$#]/g, ' ').trim();
+  return normalized || fallback;
+}
+
+export function formatTvboxPlayUrl(
+  episodes: string[] | undefined,
+  episodeTitles: string[] | undefined = [],
+): string {
+  if (!Array.isArray(episodes) || episodes.length === 0) {
+    return '';
+  }
+
+  return episodes
+    .map((url, index) => {
+      const cleanUrl = typeof url === 'string' ? url.trim() : '';
+      if (!cleanUrl) return '';
+
+      const title = sanitizeTvboxPlayTitle(
+        episodeTitles[index] || '',
+        `第${index + 1}集`,
+      );
+      return `${title}$${cleanUrl}`;
+    })
+    .filter(Boolean)
+    .join('#');
+}

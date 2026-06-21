@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 
 import { getConfig } from '@/lib/config';
 import { getBaseUrl, resolveUrl } from '@/lib/live';
+import { getEffectiveRequestOrigin } from '@/lib/request-protocol';
 
 export const runtime = 'nodejs';
 
@@ -37,18 +38,7 @@ function decodeUpstreamUrl(rawUrl: string) {
 }
 
 function getRequestOrigin(req: Request) {
-  const requestUrl = new URL(req.url);
-  const forwardedProto = req.headers
-    .get('x-forwarded-proto')
-    ?.split(',')[0]
-    .trim();
-  const forwardedHost = req.headers
-    .get('x-forwarded-host')
-    ?.split(',')[0]
-    .trim();
-  const protocol = forwardedProto || requestUrl.protocol.replace(':', '');
-  const host = forwardedHost || req.headers.get('host') || requestUrl.host;
-  return `${protocol}://${host}`;
+  return getEffectiveRequestOrigin(req);
 }
 
 function isLikelyM3U8Url(rawUrl: string) {

@@ -3,6 +3,7 @@
 const {
   decodeTvboxId,
   encodeTvboxId,
+  formatTvboxPlayUrl,
   getLastNonEmptySearchParam,
 } = require('../src/lib/tvbox-utils');
 
@@ -22,5 +23,22 @@ describe('tvbox utils', () => {
     };
 
     expect(decodeTvboxId(encodeTvboxId(payload))).toEqual(payload);
+  });
+
+  it('formats episode URLs in MacCMS play-url syntax', () => {
+    expect(
+      formatTvboxPlayUrl(
+        ['https://cdn.example.com/1.m3u8', 'https://cdn.example.com/2.m3u8'],
+        ['第1集', '第2集'],
+      ),
+    ).toBe(
+      '第1集$https://cdn.example.com/1.m3u8#第2集$https://cdn.example.com/2.m3u8',
+    );
+  });
+
+  it('sanitizes TVBox episode titles that contain separators', () => {
+    expect(
+      formatTvboxPlayUrl(['https://cdn.example.com/1.m3u8'], ['A$B#C']),
+    ).toBe('A B C$https://cdn.example.com/1.m3u8');
   });
 });

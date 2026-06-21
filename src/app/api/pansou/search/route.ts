@@ -5,7 +5,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyApiAuth } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import {
-  buildPanSouAuthorizationHeader,
   getDefaultPanSouConfig,
   isPluginSource,
   normalizePanSouConfig,
@@ -13,6 +12,7 @@ import {
   type PanSouRuntimeConfig,
   parsePluginNames,
   resolveActivePanSouNode,
+  resolvePanSouAuthorizationHeader,
   resolvePanSouSearchUrl,
 } from '@/lib/pansou';
 
@@ -229,14 +229,29 @@ async function forwardToPanSou(args: {
     headers.set('Content-Type', 'application/json');
   }
 
-  const authorization = buildPanSouAuthorizationHeader({
-    username: args.runtimeConfig.username,
-    password: args.runtimeConfig.password,
-    token: args.runtimeConfig.token,
-    fallbackAuthorization: args.request.headers.get('authorization'),
-  });
-  if (authorization) {
-    headers.set('Authorization', authorization);
+  try {
+    const authorization = await resolvePanSouAuthorizationHeader({
+      serverUrl: args.runtimeConfig.serverUrl,
+      username: args.runtimeConfig.username,
+      password: args.runtimeConfig.password,
+      token: args.runtimeConfig.token,
+      fallbackAuthorization: args.request.headers.get('authorization'),
+      timeoutMs,
+    });
+    if (authorization) {
+      headers.set('Authorization', authorization);
+    }
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: 'PanSou 登录失败',
+        details: error instanceof Error ? error.message : String(error),
+      },
+      {
+        status: 502,
+        headers: withCorsHeaders({ 'Cache-Control': 'no-store' }),
+      },
+    );
   }
 
   const userAgent = args.request.headers.get('user-agent');

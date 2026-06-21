@@ -30,6 +30,13 @@ export interface PanSouRuntimeConfig {
   password: string;
 }
 
+interface PanSouLoginTokenCacheEntry {
+  token: string;
+  expiresAt: number;
+}
+
+const panSouLoginTokenCache = new Map<string, PanSouLoginTokenCacheEntry>();
+
 function createNodeId(seed = ''): string {
   const suffix = Math.random().toString(16).slice(2, 10);
   if (seed) {
@@ -49,7 +56,11 @@ export function normalizePanSouToken(value: unknown): string {
   if (typeof value !== 'string') {
     return '';
   }
-  return value.trim();
+  return value
+    .replace(/[\r\n]/g, '')
+    .trim()
+    .replace(/^Bearer\s+/i, '')
+    .trim();
 }
 
 export function normalizePanSouUsername(value: unknown): string {
@@ -245,6 +256,17 @@ export function resolvePanSouSearchUrl(serverUrl: string): string {
   return `${normalized}/api/search`;
 }
 
+export function resolvePanSouLoginUrl(serverUrl: string): string {
+  const normalized = normalizePanSouServerUrl(serverUrl);
+  if (/\/api\/search$/i.test(normalized)) {
+    return normalized.replace(/\/api\/search$/i, '/api/auth/login');
+  }
+  if (/\/api$/i.test(normalized)) {
+    return `${normalized}/auth/login`;
+  }
+  return `${normalized}/api/auth/login`;
+}
+
 export function resolvePanSouHealthUrl(serverUrl: string): string {
   const normalized = normalizePanSouServerUrl(serverUrl);
   if (/\/api\/search$/i.test(normalized)) {
@@ -262,16 +284,6 @@ export function buildPanSouAuthorizationHeader(args: {
   token?: string;
   fallbackAuthorization?: string | null;
 }): string {
-  const username = normalizePanSouUsername(args.username);
-  const password = normalizePanSouPassword(args.password);
-
-  if (username && password) {
-    const encoded = Buffer.from(`${username}:${password}`, 'utf8')
-      .toString('base64')
-      .replace(/\s+/g, '');
-    return `Basic ${encoded}`;
-  }
-
   const token = normalizePanSouToken(args.token);
   if (token) {
     return `Bearer ${token}`;
@@ -281,6 +293,140 @@ export function buildPanSouAuthorizationHeader(args: {
     return '';
   }
   return args.fallbackAuthorization.replace(/[\r\n]/g, '').trim();
+}
+
+function parsePanSouTokenExpiry(payload: unknown, token: string): number {
+  const now = Date.now();
+  const fallback = now + 10 * 60 * 1000;
+  const candidates: number[] = [];
+
+  if (payload && typeof payload === 'object') {
+    const rawExpiresAt = (payload as { expires_at?: unknown }).expires_at;
+    const expiresAt = Number(rawExpiresAt);
+    if (Number.isFinite(expiresAt) && expiresAt > 0) {
+      candidates.push(
+        expiresAt > 10_000_000_000 ? expiresAt : expiresAt * 1000,
+      );
+    }
+  }
+
+  const [, encodedPayload] = token.split('.');
+  if (encodedPayload) {
+    try {
+      const decoded = JSON.parse(
+        Buffer.from(encodedPayload, 'base64url').toString('utf8'),
+      ) as { exp?: unknown };
+      const exp = Number(decoded.exp);
+      if (Number.isFinite(exp) && exp > 0) {
+        candidates.push(exp * 1000);
+      }
+    } catch {
+      // Non-JWT tokens still work; use the conservative fallback.
+    }
+  }
+
+  const validCandidates = candidates.filter((value) => value > now);
+  return validCandidates.length > 0 ? Math.min(...validCandidates) : fallback;
+}
+
+async function readPanSouErrorMessage(response: Response, rawBody: string) {
+  try {
+    const payload = JSON.parse(rawBody) as {
+      error?: unknown;
+      message?: unknown;
+    };
+    const message = payload.error || payload.message;
+    if (typeof message === 'string' && message.trim()) {
+      return message.trim();
+    }
+  } catch {
+    // ignore non-JSON error bodies
+  }
+  return rawBody.trim() || response.statusText || 'PanSou login failed';
+}
+
+async function fetchPanSouLoginToken(args: {
+  serverUrl: string;
+  username: string;
+  password: string;
+  timeoutMs?: number;
+}): Promise<string> {
+  const serverUrl = normalizePanSouServerUrl(args.serverUrl);
+  const username = normalizePanSouUsername(args.username);
+  const password = normalizePanSouPassword(args.password);
+
+  if (!serverUrl || !username || !password) return '';
+
+  const cacheKey = `${serverUrl}\n${username}\n${password}`;
+  const cached = panSouLoginTokenCache.get(cacheKey);
+  if (cached && cached.expiresAt - Date.now() > 60 * 1000) {
+    return cached.token;
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    args.timeoutMs && args.timeoutMs > 0 ? args.timeoutMs : 12000,
+  );
+
+  try {
+    const response = await fetch(resolvePanSouLoginUrl(serverUrl), {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ username, password }),
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+
+    const rawBody = await response.text();
+    if (!response.ok) {
+      throw new Error(await readPanSouErrorMessage(response, rawBody));
+    }
+
+    const payload = JSON.parse(rawBody) as { token?: unknown };
+    const token = normalizePanSouToken(payload.token);
+    if (!token) {
+      throw new Error('PanSou login response did not include token');
+    }
+
+    panSouLoginTokenCache.set(cacheKey, {
+      token,
+      expiresAt: parsePanSouTokenExpiry(payload, token),
+    });
+    return token;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+export async function resolvePanSouAuthorizationHeader(args: {
+  serverUrl: string;
+  username?: string;
+  password?: string;
+  token?: string;
+  fallbackAuthorization?: string | null;
+  timeoutMs?: number;
+}): Promise<string> {
+  const username = normalizePanSouUsername(args.username);
+  const password = normalizePanSouPassword(args.password);
+
+  if (username && password) {
+    const loginToken = await fetchPanSouLoginToken({
+      serverUrl: args.serverUrl,
+      username,
+      password,
+      timeoutMs: args.timeoutMs,
+    });
+    return loginToken ? `Bearer ${loginToken}` : '';
+  }
+
+  return buildPanSouAuthorizationHeader({
+    token: args.token,
+    fallbackAuthorization: args.fallbackAuthorization,
+  });
 }
 
 export function parsePluginNames(value: unknown): string[] {

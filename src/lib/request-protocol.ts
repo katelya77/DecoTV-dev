@@ -1,8 +1,10 @@
-import type { NextRequest } from 'next/server';
-
 export type EffectiveRequestProtocol = 'http' | 'https';
 
-type RequestWithUrl = Pick<NextRequest, 'headers' | 'nextUrl'>;
+type RequestWithUrl = {
+  headers: Headers;
+  nextUrl?: URL;
+  url?: string;
+};
 
 function firstHeaderValue(value: string | null): string | null {
   const first = value?.split(',')[0]?.trim();
@@ -32,6 +34,40 @@ function getForwardedProto(
   return null;
 }
 
+function normalizeHost(value: string | null): string | null {
+  const normalized = value?.replace(/^"|"$/g, '').trim();
+  if (!normalized || /[\r\n]/.test(normalized)) return null;
+  return normalized;
+}
+
+function getForwardedHost(header: string | null): string | null {
+  const firstForwarded = firstHeaderValue(header);
+  if (!firstForwarded) return null;
+
+  for (const part of firstForwarded.split(';')) {
+    const [rawName, ...rawValueParts] = part.split('=');
+    if (rawName?.trim().toLowerCase() !== 'host') continue;
+
+    return normalizeHost(rawValueParts.join('='));
+  }
+
+  return null;
+}
+
+function getRequestUrl(request: RequestWithUrl): URL | null {
+  if (request.nextUrl) return request.nextUrl;
+
+  if (typeof request.url === 'string') {
+    try {
+      return new URL(request.url);
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
 export function getEffectiveRequestProtocol(
   request: RequestWithUrl,
 ): EffectiveRequestProtocol {
@@ -45,7 +81,8 @@ export function getEffectiveRequestProtocol(
   );
   if (standardForwardedProto) return standardForwardedProto;
 
-  return request.nextUrl.protocol.toLowerCase() === 'https:' ? 'https' : 'http';
+  const requestUrl = getRequestUrl(request);
+  return requestUrl?.protocol.toLowerCase() === 'https:' ? 'https' : 'http';
 }
 
 export function isSecureRequest(request: RequestWithUrl): boolean {
@@ -54,9 +91,11 @@ export function isSecureRequest(request: RequestWithUrl): boolean {
 
 export function getEffectiveRequestHost(request: RequestWithUrl): string {
   return (
-    firstHeaderValue(request.headers.get('x-forwarded-host')) ||
-    request.headers.get('host')?.trim() ||
-    request.nextUrl.host
+    normalizeHost(firstHeaderValue(request.headers.get('x-forwarded-host'))) ||
+    getForwardedHost(request.headers.get('forwarded')) ||
+    normalizeHost(request.headers.get('host')) ||
+    getRequestUrl(request)?.host ||
+    ''
   );
 }
 

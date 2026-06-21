@@ -454,7 +454,7 @@ export default function PanSouConfigPanel({
                     </p>
                     <p className='text-[11px] text-gray-500 dark:text-gray-400'>
                       {node.username.trim()
-                        ? '鉴权方式：Basic Auth（用户名/密码）'
+                        ? '鉴权方式：登录换取 Bearer Token（用户名/密码）'
                         : node.token.trim()
                           ? '鉴权方式：Bearer Token'
                           : '鉴权方式：无'}
@@ -698,7 +698,7 @@ export default function PanSouConfigPanel({
                           username: event.target.value,
                         }))
                       }
-                      placeholder='Basic Auth 用户名'
+                      placeholder='PanSou 登录用户名'
                       className='w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900/50 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 transition-all'
                     />
                   </div>
@@ -718,7 +718,7 @@ export default function PanSouConfigPanel({
                           password: event.target.value,
                         }))
                       }
-                      placeholder='Basic Auth 密码'
+                      placeholder='PanSou 登录密码'
                       className='w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900/50 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 transition-all'
                     />
                   </div>
@@ -726,8 +726,8 @@ export default function PanSouConfigPanel({
 
                 <div className='rounded-lg border border-gray-100 dark:border-gray-700/50 bg-gray-50 dark:bg-gray-900/30 p-3'>
                   <p className='text-xs text-gray-600 dark:text-gray-400'>
-                    如填写用户名和密码，请求会自动注入 HTTP Basic
-                    Auth（Authorization: Basic ...）。
+                    如填写用户名和密码，DecoTV 会先调用 PanSou 登录接口获取
+                    JWT，再以 Authorization: Bearer ... 请求搜索接口。
                   </p>
                 </div>
 

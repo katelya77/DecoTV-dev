@@ -5,6 +5,8 @@ const {
   getAuthCookieOptions,
 } = require('../src/lib/auth-cookie');
 const {
+  getEffectiveRequestHost,
+  getEffectiveRequestOrigin,
   getEffectiveRequestProtocol,
   isSecureRequest,
 } = require('../src/lib/request-protocol');
@@ -62,6 +64,29 @@ describe('request protocol detection', () => {
 
     expect(getEffectiveRequestProtocol(request)).toBe('http');
     expect(isSecureRequest(request)).toBe(false);
+  });
+
+  it('preserves forwarded host ports when building the effective origin', () => {
+    const request = requestLike('http://127.0.0.1:3000/api/proxy/m3u8-filter', {
+      'x-forwarded-proto': 'https, http',
+      'x-forwarded-host': 'tv.example.com:8443',
+      host: '127.0.0.1:3000',
+    });
+
+    expect(getEffectiveRequestHost(request)).toBe('tv.example.com:8443');
+    expect(getEffectiveRequestOrigin(request)).toBe(
+      'https://tv.example.com:8443',
+    );
+  });
+
+  it('falls back to the standard Forwarded host value', () => {
+    const request = requestLike('http://127.0.0.1:3000/api/login', {
+      forwarded: 'for=192.0.2.60;proto=https;host="tv.example.com:9443"',
+    });
+
+    expect(getEffectiveRequestOrigin(request)).toBe(
+      'https://tv.example.com:9443',
+    );
   });
 });
 

@@ -14,6 +14,7 @@ import {
   normalizeHeaderUrl,
   validateProxyTargetUrl,
 } from '@/lib/proxy-security';
+import { getEffectiveRequestOrigin } from '@/lib/request-protocol';
 
 export const runtime = 'nodejs';
 
@@ -75,21 +76,15 @@ function buildProxyUrl(
   upstreamUrl: string,
   referer?: string,
 ): string {
-  const host = request.headers.get('host');
-  const protocol =
-    request.headers.get('x-forwarded-proto') ||
-    (() => {
-      try {
-        return new URL(request.url).protocol.replace(':', '');
-      } catch {
-        return 'http';
-      }
-    })();
   const signature = signM3U8ProxyRequest(upstreamUrl, referer);
-  let qs = `url=${encodeURIComponent(upstreamUrl)}`;
-  if (referer) qs += `&referer=${encodeURIComponent(referer)}`;
-  if (signature) qs += `&sig=${encodeURIComponent(signature)}`;
-  return `${protocol}://${host}/api/proxy/m3u8-filter?${qs}`;
+  const proxyUrl = new URL(
+    '/api/proxy/m3u8-filter',
+    getEffectiveRequestOrigin(request),
+  );
+  proxyUrl.searchParams.set('url', upstreamUrl);
+  if (referer) proxyUrl.searchParams.set('referer', referer);
+  if (signature) proxyUrl.searchParams.set('sig', signature);
+  return proxyUrl.toString();
 }
 
 function shouldProxyMediaAssets(): boolean {
@@ -123,23 +118,18 @@ function buildAssetProxyUrl(
   referer?: string,
   kind: 'segment' | 'key' | 'map' = inferAssetKind(upstreamUrl),
 ): string {
-  const host = request.headers.get('host');
-  const protocol =
-    request.headers.get('x-forwarded-proto') ||
-    (() => {
-      try {
-        return new URL(request.url).protocol.replace(':', '');
-      } catch {
-        return 'http';
-      }
-    })();
   const signature = signM3U8ProxyRequest(upstreamUrl, referer);
   if (!signature) return upstreamUrl;
 
-  let qs = `url=${encodeURIComponent(upstreamUrl)}&kind=${kind}`;
-  if (referer) qs += `&referer=${encodeURIComponent(referer)}`;
-  qs += `&sig=${encodeURIComponent(signature)}`;
-  return `${protocol}://${host}/api/proxy/m3u8-asset?${qs}`;
+  const proxyUrl = new URL(
+    '/api/proxy/m3u8-asset',
+    getEffectiveRequestOrigin(request),
+  );
+  proxyUrl.searchParams.set('url', upstreamUrl);
+  proxyUrl.searchParams.set('kind', kind);
+  if (referer) proxyUrl.searchParams.set('referer', referer);
+  proxyUrl.searchParams.set('sig', signature);
+  return proxyUrl.toString();
 }
 
 function rewriteUriAttribute(
