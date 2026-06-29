@@ -93,6 +93,7 @@ function main() {
     process.env.GIT_COMMIT_SHA,
     process.env.NEXT_PUBLIC_BUILD_COMMIT_SHA,
     process.env.GITHUB_SHA,
+    process.env.VERCEL_GIT_COMMIT_SHA,
     runGit(['rev-parse', 'HEAD']),
   );
 
@@ -106,6 +107,7 @@ function main() {
     process.env.GIT_REF_NAME,
     process.env.NEXT_PUBLIC_BUILD_REF,
     process.env.GITHUB_REF_NAME,
+    process.env.VERCEL_GIT_COMMIT_REF,
     runGit(['rev-parse', '--abbrev-ref', 'HEAD']),
   );
 
@@ -124,7 +126,15 @@ function main() {
     commitDate,
     ref,
     repo,
-    source: process.env.GITHUB_ACTIONS === 'true' ? 'github-actions' : 'local',
+    source:
+      process.env.GITHUB_ACTIONS === 'true'
+        ? 'github-actions'
+        : process.env.VERCEL
+          ? 'vercel'
+          : process.env.DOCKER_BUILD === 'true' ||
+              process.env.DOCKER_ENV === 'true'
+            ? 'docker'
+            : 'local',
   };
 
   fs.mkdirSync(publicDir, { recursive: true });

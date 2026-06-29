@@ -50,6 +50,20 @@ let remoteMetadataCache: {
   timestamp: number;
 } | null = null;
 
+function noStoreJson(
+  payload: unknown,
+  init?: Parameters<typeof NextResponse.json>[1],
+) {
+  const response = NextResponse.json(payload, init);
+  response.headers.set(
+    'Cache-Control',
+    'no-store, no-cache, max-age=0, must-revalidate',
+  );
+  response.headers.set('Pragma', 'no-cache');
+  response.headers.set('Expires', '0');
+  return response;
+}
+
 /**
  * 带超时的 fetch（服务端版本）
  */
@@ -93,8 +107,46 @@ function isTimestamp(value?: string | null) {
   return /^\d{14}$/.test(value || '');
 }
 
-function pickTimestamp(...values: Array<string | undefined>) {
+function pickTimestamp(...values: Array<string | null | undefined>): string {
   return values.find((value) => isTimestamp(value)) || '';
+}
+
+function timestampValue(value?: string | null): bigint | null {
+  return isTimestamp(value) ? BigInt(value as string) : null;
+}
+
+function pickNewestTimestamp(
+  ...values: Array<string | null | undefined>
+): string {
+  return values.reduce<string>((newest, value) => {
+    const currentValue = timestampValue(value);
+    if (!currentValue) return newest;
+
+    const newestValue = timestampValue(newest);
+    return !newestValue || currentValue > newestValue ? value || '' : newest;
+  }, '');
+}
+
+function preferNewerMetadata(
+  envMetadata: Partial<BuildMetadata>,
+  fileMetadata: Partial<BuildMetadata>,
+) {
+  const envTimestamp = timestampValue(envMetadata.timestamp);
+  const fileTimestamp = timestampValue(fileMetadata.timestamp);
+
+  if (!fileTimestamp) return envMetadata;
+  if (!envTimestamp) return fileMetadata;
+
+  if (fileTimestamp > envTimestamp) return fileMetadata;
+  if (fileTimestamp < envTimestamp) return envMetadata;
+
+  const fileCommit = normalizeCommitSha(fileMetadata.commitSha);
+  const envCommit = normalizeCommitSha(envMetadata.commitSha);
+
+  if (fileCommit && !envCommit) return fileMetadata;
+  if (!fileCommit && envCommit) return envMetadata;
+
+  return fileMetadata;
 }
 
 /**
@@ -135,37 +187,63 @@ async function getLocalMetadata(): Promise<BuildMetadata> {
     }
   }
 
-  const commitSha = normalizeCommitSha(
+  const envCommitSha = normalizeCommitSha(
     process.env.GIT_COMMIT_SHA ||
       process.env.NEXT_PUBLIC_BUILD_COMMIT_SHA ||
-      fileMetadata.commitSha,
+      process.env.GITHUB_SHA ||
+      process.env.VERCEL_GIT_COMMIT_SHA,
   );
 
-  const timestamp =
+  const envTimestamp =
     pickTimestamp(
       process.env.BUILD_TIMESTAMP,
       process.env.NEXT_PUBLIC_BUILD_TIMESTAMP,
-      fileMetadata.timestamp,
-      fileTimestamp,
       BUILD_TIMESTAMP,
     ) || BUILD_TIMESTAMP;
+
+  const fileTimestampValue = pickNewestTimestamp(
+    fileMetadata.timestamp,
+    fileTimestamp,
+  );
+  const envMetadata: Partial<BuildMetadata> = {
+    timestamp: envTimestamp,
+    commitSha: envCommitSha,
+    commitDate:
+      process.env.GIT_COMMIT_DATE || process.env.NEXT_PUBLIC_BUILD_COMMIT_DATE,
+    ref:
+      process.env.GIT_REF_NAME ||
+      process.env.NEXT_PUBLIC_BUILD_REF ||
+      process.env.GITHUB_REF_NAME ||
+      process.env.VERCEL_GIT_COMMIT_REF,
+    source:
+      process.env.GITHUB_ACTIONS === 'true'
+        ? 'github-actions'
+        : process.env.VERCEL
+          ? 'vercel'
+          : process.env.DOCKER_ENV === 'true' ||
+              process.env.DOCKER_BUILD === 'true'
+            ? 'docker'
+            : undefined,
+  };
+  const selectedMetadata = preferNewerMetadata(envMetadata, {
+    ...fileMetadata,
+    timestamp: fileTimestampValue,
+  });
+  const commitSha = normalizeCommitSha(selectedMetadata.commitSha);
+  const timestamp =
+    pickTimestamp(selectedMetadata.timestamp, fileTimestamp, BUILD_TIMESTAMP) ||
+    BUILD_TIMESTAMP;
 
   return {
     version: CURRENT_VERSION,
     timestamp,
-    buildTime: fileMetadata.buildTime,
+    buildTime: selectedMetadata.buildTime,
     commitSha,
     shortCommit: shortCommit(commitSha),
-    commitDate:
-      process.env.GIT_COMMIT_DATE ||
-      process.env.NEXT_PUBLIC_BUILD_COMMIT_DATE ||
-      fileMetadata.commitDate,
-    ref:
-      process.env.GIT_REF_NAME ||
-      process.env.NEXT_PUBLIC_BUILD_REF ||
-      fileMetadata.ref,
-    repo: fileMetadata.repo || UPDATE_REPO,
-    source: fileMetadata.source,
+    commitDate: selectedMetadata.commitDate || fileMetadata.commitDate,
+    ref: selectedMetadata.ref || fileMetadata.ref,
+    repo: selectedMetadata.repo || fileMetadata.repo || UPDATE_REPO,
+    source: selectedMetadata.source || fileMetadata.source,
   };
 }
 
@@ -339,7 +417,7 @@ export async function GET() {
       ? compareBuildMetadata(local, remote)
       : { hasUpdate: false, reason: 'none' as const };
 
-    return NextResponse.json({
+    return noStoreJson({
       success: true,
       version: local.version,
       localTimestamp: local.timestamp,
@@ -355,6 +433,7 @@ export async function GET() {
         commitSha: local.commitSha,
         shortCommit: local.shortCommit,
         commitDate: local.commitDate,
+        source: local.source,
         displayVersion: `v${local.version}`,
         updateAvailable: comparison.hasUpdate,
       },
@@ -365,6 +444,7 @@ export async function GET() {
             commitSha: remote.commitSha,
             shortCommit: remote.shortCommit,
             commitDate: remote.commitDate,
+            source: remote.source,
             displayVersion: `v${remote.version}`,
             downloadUrl: `https://github.com/${UPDATE_REPO}`,
             releaseNotes: [
@@ -380,7 +460,7 @@ export async function GET() {
     });
   } catch (error) {
     console.error('版本检查 API 错误:', error);
-    return NextResponse.json(
+    return noStoreJson(
       {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',

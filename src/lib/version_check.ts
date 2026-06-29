@@ -163,6 +163,16 @@ function isValidTimestamp(timestamp: string): boolean {
   return /^\d{14}$/.test(timestamp);
 }
 
+function pickNewestTimestamp(
+  ...values: Array<string | null | undefined>
+): string {
+  return values.reduce<string>((newest, value) => {
+    if (!value || !isValidTimestamp(value)) return newest;
+    if (!newest || BigInt(value) > BigInt(newest)) return value;
+    return newest;
+  }, '');
+}
+
 /**
  * 带超时的 fetch
  */
@@ -361,7 +371,10 @@ async function fetchLocalMetadata(): Promise<BuildMetadata | null> {
     ['/version.json', './version.json'],
     3000,
   );
-  const timestamp = metadata?.timestamp || (await fetchLocalTimestamp());
+  const timestamp = pickNewestTimestamp(
+    metadata?.timestamp,
+    await fetchLocalTimestamp(),
+  );
 
   if (!timestamp) return null;
 
