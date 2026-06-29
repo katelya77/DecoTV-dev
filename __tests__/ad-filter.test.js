@@ -1,6 +1,9 @@
 /* global describe, expect, it */
 
-const { filterM3U8 } = require('../src/lib/ad-filter');
+const {
+  filterM3U8,
+  shouldBypassFilteredPlaylist,
+} = require('../src/lib/ad-filter');
 
 describe('ad filter', () => {
   it('removes casino/gambling ad domains from variant playlists', () => {
@@ -39,6 +42,27 @@ describe('ad filter', () => {
     expect(result.adsRemoved).toBe(0);
     expect(result.filtered).toContain(
       'https://video.example.com/g19/main-9.ts',
+    );
+  });
+
+  it('bypasses ad filtering when the filtered playlist becomes abnormally short', () => {
+    const original = ['#EXTM3U', '#EXT-X-VERSION:3'];
+    for (let index = 0; index < 120; index++) {
+      original.push('#EXTINF:6.0,');
+      original.push(`https://video.example.com/main-${index}.ts`);
+    }
+    original.push('#EXT-X-ENDLIST');
+
+    const filtered = [
+      '#EXTM3U',
+      '#EXT-X-VERSION:3',
+      '#EXTINF:6.0,',
+      'https://video.example.com/main-0.ts',
+      '#EXT-X-ENDLIST',
+    ].join('\n');
+
+    expect(shouldBypassFilteredPlaylist(original.join('\n'), filtered)).toBe(
+      true,
     );
   });
 });

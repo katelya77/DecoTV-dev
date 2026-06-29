@@ -10,6 +10,17 @@ export function processImageUrl(originalUrl: string): string {
 }
 
 export type VideoSourceTestStatus = 'ok' | 'partial' | 'failed';
+export type VideoSourceFailureKind =
+  | 'empty'
+  | 'timeout'
+  | 'resolver'
+  | 'manifest'
+  | 'fragment'
+  | 'media'
+  | 'network'
+  | 'unsupported'
+  | 'unknown';
+export type PlaybackMediaType = 'hls' | 'file' | 'page' | 'unknown';
 
 export interface VideoSourceTestResult {
   quality: string;
@@ -22,6 +33,9 @@ export interface VideoSourceTestResult {
   message?: string;
   playable?: boolean;
   testedAt?: number;
+  resolvedUrl?: string;
+  mediaType?: PlaybackMediaType;
+  failureKind?: VideoSourceFailureKind;
 }
 
 const DEFAULT_SOURCE_TEST_TIMEOUT_MS = 10000;
@@ -131,6 +145,9 @@ function buildResult(input: {
   status: VideoSourceTestStatus;
   message?: string;
   playable?: boolean;
+  failureKind?: VideoSourceFailureKind;
+  resolvedUrl?: string;
+  mediaType?: PlaybackMediaType;
 }): VideoSourceTestResult {
   return {
     quality: input.quality || '未知',
@@ -146,6 +163,9 @@ function buildResult(input: {
     message: input.message,
     playable: input.playable,
     testedAt: Date.now(),
+    resolvedUrl: input.resolvedUrl,
+    mediaType: input.mediaType,
+    failureKind: input.failureKind,
   };
 }
 
@@ -167,7 +187,11 @@ async function measureNativeVideoSource(
     let failureCheckStarted = false;
     let abortHandler: (() => void) | null = null;
 
-    const finish = (status: VideoSourceTestStatus, message?: string) => {
+    const finish = (
+      status: VideoSourceTestStatus,
+      message?: string,
+      failureKind?: VideoSourceFailureKind,
+    ) => {
       if (finished) return;
       finished = true;
       const elapsedMs = performance.now() - startedAt;
@@ -187,11 +211,14 @@ async function measureNativeVideoSource(
           status,
           message,
           playable: status !== 'failed',
+          failureKind,
+          resolvedUrl: url,
+          mediaType: 'file',
         }),
       );
     };
 
-    abortHandler = () => finish('failed', '测速已取消');
+    abortHandler = () => finish('failed', '测速已取消', 'unknown');
     if (signal?.aborted) {
       abortHandler();
       return;
@@ -210,9 +237,13 @@ async function measureNativeVideoSource(
 
       if (probe.reachable) {
         pingTime = probe.responseMs;
-        finish('partial', `${fallbackMessage}，但地址可访问`);
+        finish('partial', `${fallbackMessage}，但地址可访问`, 'media');
       } else {
-        finish('failed', probe.message || fallbackMessage);
+        finish(
+          'failed',
+          probe.message || fallbackMessage,
+          probe.message === '连接超时' ? 'timeout' : 'network',
+        );
       }
     };
 
@@ -239,6 +270,7 @@ export async function getVideoResolutionFromM3u8(
       pingTime: 0,
       status: 'failed',
       message: '播放地址为空',
+      failureKind: 'empty',
     });
   }
 
@@ -248,6 +280,9 @@ export async function getVideoResolutionFromM3u8(
       pingTime: 0,
       status: 'failed',
       message: '当前环境无法测速',
+      failureKind: 'unsupported',
+      resolvedUrl: m3u8Url,
+      mediaType: isLikelyHlsUrl(m3u8Url) ? 'hls' : 'unknown',
     });
   }
 
@@ -304,7 +339,11 @@ export async function getVideoResolutionFromM3u8(
       video.remove();
     };
 
-    const finish = (status?: VideoSourceTestStatus, message?: string) => {
+    const finish = (
+      status?: VideoSourceTestStatus,
+      message?: string,
+      failureKind?: VideoSourceFailureKind,
+    ) => {
       if (finished) return;
       finished = true;
       cleanup();
@@ -326,11 +365,20 @@ export async function getVideoResolutionFromM3u8(
           status: finalStatus,
           message: message || lastMessage,
           playable,
+          resolvedUrl: m3u8Url,
+          mediaType: 'hls',
+          failureKind:
+            failureKind ||
+            (finalStatus === 'failed'
+              ? 'unknown'
+              : finalStatus === 'partial'
+                ? 'fragment'
+                : undefined),
         }),
       );
     };
 
-    abortHandler = () => finish('failed', '测速已取消');
+    abortHandler = () => finish('failed', '测速已取消', 'unknown');
     if (options.signal?.aborted) {
       abortHandler();
       return;
@@ -341,6 +389,7 @@ export async function getVideoResolutionFromM3u8(
       finish(
         undefined,
         manifestLoaded ? '测速超时，已确认源可连接' : '连接超时',
+        'timeout',
       );
     }, timeoutMs);
 
@@ -362,9 +411,9 @@ export async function getVideoResolutionFromM3u8(
     };
     video.onerror = () => {
       if (manifestLoaded || speedKBps > 0) {
-        finish('partial', '媒体元素未返回元数据，但源已连通');
+        finish('partial', '媒体元素未返回元数据，但源已连通', 'media');
       } else {
-        finish('failed', '浏览器未能加载媒体，未确认源可用');
+        finish('failed', '浏览器未能加载媒体，未确认源可用', 'media');
       }
     };
 
@@ -417,22 +466,34 @@ export async function getVideoResolutionFromM3u8(
     hls.on(Hls.Events.ERROR, (_event: any, data: any) => {
       if (!data?.fatal) return;
       const details = String(data?.details || '');
-      const message = (() => {
+      const { message, failureKind } = (() => {
         if (/manifest/i.test(details)) {
-          return '播放清单不可访问或格式异常';
+          return {
+            message: '播放清单不可访问或格式异常',
+            failureKind: 'manifest' as const,
+          };
         }
         if (/frag/i.test(details)) {
-          return '媒体分片加载失败，源不稳定';
+          return {
+            message: '媒体分片加载失败，源不稳定',
+            failureKind: 'fragment' as const,
+          };
         }
         if (/buffer|media/i.test(details)) {
-          return '浏览器解码失败，源可能不兼容';
+          return {
+            message: '浏览器解码失败，源可能不兼容',
+            failureKind: 'media' as const,
+          };
         }
-        return data?.details || data?.type || 'HLS 加载失败';
+        return {
+          message: data?.details || data?.type || 'HLS 加载失败',
+          failureKind: 'unknown' as const,
+        };
       })();
       if (manifestLoaded || speedKBps > 0) {
-        finish('partial', message);
+        finish('partial', message, failureKind);
       } else {
-        finish('failed', message);
+        finish('failed', message, failureKind);
       }
     });
 

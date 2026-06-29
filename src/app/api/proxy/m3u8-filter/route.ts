@@ -2,7 +2,11 @@
 
 import { NextResponse } from 'next/server';
 
-import { DEFAULT_AD_FILTER_CONFIG, filterM3U8 } from '@/lib/ad-filter';
+import {
+  DEFAULT_AD_FILTER_CONFIG,
+  filterM3U8,
+  shouldBypassFilteredPlaylist,
+} from '@/lib/ad-filter';
 import { getConfig } from '@/lib/config';
 import { getBaseUrl, resolveUrl } from '@/lib/live';
 import {
@@ -341,15 +345,27 @@ export async function GET(request: Request) {
   const refererToSend =
     sanitizedExplicitReferer || fallbackReferer || inboundReferer;
 
-  const upstreamHeaders: Record<string, string> = { 'User-Agent': ua };
-  if (refererToSend) {
-    upstreamHeaders['Referer'] = refererToSend;
-    try {
-      upstreamHeaders['Origin'] = new URL(refererToSend).origin;
-    } catch {
-      // ignore
+  const buildUpstreamHeaders = (refererValue?: string) => {
+    const headers: Record<string, string> = { 'User-Agent': ua };
+    if (refererValue) {
+      headers.Referer = refererValue;
+      try {
+        headers.Origin = new URL(refererValue).origin;
+      } catch {
+        // ignore
+      }
     }
-  }
+    return headers;
+  };
+
+  const upstreamHeaders = buildUpstreamHeaders(refererToSend);
+  const retryReferer =
+    fallbackReferer && fallbackReferer !== refererToSend
+      ? fallbackReferer
+      : inboundReferer && inboundReferer !== refererToSend
+        ? inboundReferer
+        : undefined;
+  let effectiveRefererToSend = refererToSend;
 
   let upstream: Response;
   try {
@@ -362,17 +378,54 @@ export async function GET(request: Request) {
       { timeoutMs: FETCH_TIMEOUT_MS, maxRedirects: MAX_REDIRECTS },
     );
   } catch (e: any) {
-    return NextResponse.json(
-      { error: 'Upstream fetch failed', details: e?.message || 'unknown' },
-      { status: 502 },
-    );
+    if (!retryReferer) {
+      return NextResponse.json(
+        { error: 'Upstream fetch failed', details: e?.message || 'unknown' },
+        { status: 502 },
+      );
+    }
+    try {
+      upstream = await fetchWithValidatedRedirects(
+        decodedUrl,
+        {
+          cache: 'no-store',
+          headers: buildUpstreamHeaders(retryReferer),
+        },
+        { timeoutMs: FETCH_TIMEOUT_MS, maxRedirects: MAX_REDIRECTS },
+      );
+      effectiveRefererToSend = retryReferer;
+    } catch (retryError: any) {
+      return NextResponse.json(
+        {
+          error: 'Upstream fetch failed',
+          details: retryError?.message || e?.message || 'unknown',
+        },
+        { status: 502 },
+      );
+    }
   }
 
   if (!upstream.ok) {
-    return NextResponse.json(
-      { error: 'Upstream returned non-OK', status: upstream.status },
-      { status: 502 },
-    );
+    if (retryReferer && (upstream.status === 403 || upstream.status === 404)) {
+      const retryUpstream = await fetchWithValidatedRedirects(
+        decodedUrl,
+        {
+          cache: 'no-store',
+          headers: buildUpstreamHeaders(retryReferer),
+        },
+        { timeoutMs: FETCH_TIMEOUT_MS, maxRedirects: MAX_REDIRECTS },
+      ).catch(() => null);
+      if (retryUpstream?.ok) {
+        upstream = retryUpstream;
+        effectiveRefererToSend = retryReferer;
+      }
+    }
+    if (!upstream.ok) {
+      return NextResponse.json(
+        { error: 'Upstream returned non-OK', status: upstream.status },
+        { status: 502 },
+      );
+    }
   }
 
   let content: string;
@@ -398,17 +451,23 @@ export async function GET(request: Request) {
   let body: string;
   let adsRemoved = 0;
   let adsDuration = 0;
+  let adFilterBypassed = false;
 
   if (content.includes('#EXT-X-STREAM-INF')) {
     // 把当前请求用的 referer 透传到变体 URL 的代理参数里，
     // 否则下一跳又会因为没有 Referer 被上游拒
-    body = rewriteMasterPlaylist(content, baseUrl, request, refererToSend);
+    body = rewriteMasterPlaylist(
+      content,
+      baseUrl,
+      request,
+      effectiveRefererToSend,
+    );
   } else {
     const rewritten = rewriteVariantPlaylist(
       content,
       baseUrl,
       request,
-      refererToSend,
+      effectiveRefererToSend,
     );
     // 调试/对照场景：?adfilter=false 让代理只做 referer 透传 + 相对路径绝对化，
     // 不删任何广告段，方便客户端拿到原始时间轴
@@ -417,9 +476,17 @@ export async function GET(request: Request) {
       searchParams.get('adfilter') === '0';
     if ((await isAdFilterEnabled()) && !queryDisable) {
       const result = filterM3U8(rewritten, buildFilterConfigFromEnv());
-      body = result.filtered;
-      adsRemoved = result.adsRemoved;
-      adsDuration = result.adsDuration;
+      if (
+        result.changed &&
+        shouldBypassFilteredPlaylist(rewritten, result.filtered)
+      ) {
+        body = rewritten;
+        adFilterBypassed = true;
+      } else {
+        body = result.filtered;
+        adsRemoved = result.adsRemoved;
+        adsDuration = result.adsDuration;
+      }
     } else {
       body = rewritten;
     }
@@ -436,11 +503,14 @@ export async function GET(request: Request) {
   headers.set('Access-Control-Allow-Headers', 'Content-Type, Range, Accept');
   headers.set(
     'Access-Control-Expose-Headers',
-    'Content-Length, Content-Range, X-Ads-Removed, X-Ads-Duration',
+    'Content-Length, Content-Range, X-Ads-Removed, X-Ads-Duration, X-Ad-Filter-Bypassed',
   );
   if (adsRemoved > 0) {
     headers.set('X-Ads-Removed', String(adsRemoved));
     headers.set('X-Ads-Duration', adsDuration.toFixed(1));
+  }
+  if (adFilterBypassed) {
+    headers.set('X-Ad-Filter-Bypassed', 'unsafe-filter-result');
   }
 
   return new Response(body, { status: 200, headers });

@@ -168,16 +168,16 @@ function pushCandidate(
   }
 }
 
-export function extractPlaybackUrlFromHtml(
+export function extractPlaybackCandidatesFromHtml(
   html: string,
   pageUrl: string,
-): string | null {
-  if (!html) return null;
+): string[] {
+  if (!html) return [];
 
   const candidates: string[] = [];
   const patterns: RegExp[] = [
     /\b(?:const|let|var)\s+(?:url|playUrl|videoUrl|m3u8|src)\s*=\s*(['"`])([^'"`]+)\1/gi,
-    /\b(?:url|play_url|playUrl|videoUrl|m3u8)\s*:\s*(['"`])([^'"`]+)\1/gi,
+    /["']?(?:url|play_url|playUrl|videoUrl|m3u8)["']?\s*:\s*(['"`])([^'"`]+)\1/gi,
     /\bhls\.loadSource\(\s*(['"`])([^'"`]+)\1\s*\)/gi,
     /<(?:source|video|iframe)\b[^>]+src=(['"])([^'"]+)\1/gi,
   ];
@@ -194,6 +194,14 @@ export function extractPlaybackUrlFromHtml(
     pushCandidate(candidates, pageUrl, match[0]);
   }
 
+  return candidates;
+}
+
+export function extractPlaybackUrlFromHtml(
+  html: string,
+  pageUrl: string,
+): string | null {
+  const candidates = extractPlaybackCandidatesFromHtml(html, pageUrl);
   return (
     candidates.find(
       (candidate) => inferMediaTypeFromUrl(candidate) === 'hls',
@@ -202,6 +210,26 @@ export function extractPlaybackUrlFromHtml(
       (candidate) => inferMediaTypeFromUrl(candidate) === 'file',
     ) ||
     null
+  );
+}
+
+function extractNestedPlaybackPageUrlFromHtml(
+  html: string,
+  pageUrl: string,
+): string | null {
+  if (!html) return null;
+
+  const candidates: string[] = [];
+  for (const match of html.matchAll(/<iframe\b[^>]+src=(['"])([^'"]+)\1/gi)) {
+    pushCandidate(candidates, pageUrl, match[2]);
+  }
+
+  return (
+    candidates.find((candidate) => {
+      if (candidate === pageUrl) return false;
+      const type = inferMediaTypeFromUrl(candidate);
+      return type === 'unknown' || type === 'page';
+    }) || null
   );
 }
 
@@ -332,6 +360,80 @@ export async function resolveExternalPlaybackUrl(
       } satisfies PlaybackUrlResolution;
       setCached(originalUrl, result);
       return result;
+    }
+
+    const nestedPageUrl = extractNestedPlaybackPageUrlFromHtml(html, finalUrl);
+    if (nestedPageUrl) {
+      try {
+        const nestedResponse = await fetchWithValidatedRedirects(
+          nestedPageUrl,
+          {
+            cache: 'no-store',
+            headers: {
+              Accept:
+                'text/html,application/vnd.apple.mpegurl,application/x-mpegURL,video/*;q=0.8,*/*;q=0.5',
+              Range: `bytes=0-${MAX_TEXT_BYTES - 1}`,
+              Referer: finalUrl,
+              'User-Agent': DEFAULT_UA,
+            },
+          },
+          { timeoutMs: RESOLVE_TIMEOUT_MS, maxRedirects: MAX_REDIRECTS },
+        );
+        const nestedFinalUrl = nestedResponse.url || nestedPageUrl;
+        const nestedContentType =
+          nestedResponse.headers.get('content-type') || '';
+        const nestedResponseType =
+          inferMediaTypeFromContentType(nestedContentType);
+        const nestedFinalType = inferMediaTypeFromUrl(nestedFinalUrl);
+
+        if (nestedResponseType === 'hls' || nestedFinalType === 'hls') {
+          await nestedResponse.body?.cancel().catch(() => undefined);
+          const result = {
+            originalUrl,
+            resolvedUrl: nestedFinalUrl,
+            mediaType: 'hls',
+            resolved: true,
+            referer: finalUrl,
+            contentType: nestedContentType,
+          } satisfies PlaybackUrlResolution;
+          setCached(originalUrl, result);
+          return result;
+        }
+
+        if (nestedResponseType === 'file' || nestedFinalType === 'file') {
+          await nestedResponse.body?.cancel().catch(() => undefined);
+          const result = {
+            originalUrl,
+            resolvedUrl: nestedFinalUrl,
+            mediaType: 'file',
+            resolved: true,
+            referer: finalUrl,
+            contentType: nestedContentType,
+          } satisfies PlaybackUrlResolution;
+          setCached(originalUrl, result);
+          return result;
+        }
+
+        const nestedHtml = await readTextWithLimit(nestedResponse);
+        const nestedExtractedUrl = extractPlaybackUrlFromHtml(
+          nestedHtml,
+          nestedFinalUrl,
+        );
+        if (nestedExtractedUrl) {
+          const result = {
+            originalUrl,
+            resolvedUrl: nestedExtractedUrl,
+            mediaType: inferMediaTypeFromUrl(nestedExtractedUrl),
+            resolved: true,
+            referer: nestedFinalUrl,
+            contentType: nestedContentType,
+          } satisfies PlaybackUrlResolution;
+          setCached(originalUrl, result);
+          return result;
+        }
+      } catch {
+        // Keep the original page fallback when a nested player page is blocked.
+      }
     }
 
     const fallback = {

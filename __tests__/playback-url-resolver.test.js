@@ -1,10 +1,56 @@
-/* global describe, expect, it */
+/* global beforeEach, describe, expect, it, jest */
+
+jest.mock('../src/lib/proxy-security', () => ({
+  fetchWithValidatedRedirects: jest.fn(),
+  validateProxyTargetUrl: jest.fn(),
+}));
+
+const {
+  fetchWithValidatedRedirects,
+  validateProxyTargetUrl,
+} = require('../src/lib/proxy-security');
+const { TextDecoder, TextEncoder } = require('util');
+
+global.TextDecoder = TextDecoder;
+global.TextEncoder = TextEncoder;
 
 const {
   extractPlaybackUrlFromHtml,
+  resolveExternalPlaybackUrl,
 } = require('../src/lib/playback-url-resolver');
 
+function textResponse(body, url = '') {
+  return {
+    url,
+    headers: {
+      get(name) {
+        return name.toLowerCase() === 'content-type'
+          ? 'text/html; charset=utf-8'
+          : '';
+      },
+    },
+    body: {
+      getReader() {
+        let consumed = false;
+        return {
+          async read() {
+            if (consumed) return { done: true };
+            consumed = true;
+            return { done: false, value: Buffer.from(body, 'utf8') };
+          },
+          async cancel() {},
+        };
+      },
+    },
+  };
+}
+
 describe('playback url resolver', () => {
+  beforeEach(() => {
+    fetchWithValidatedRedirects.mockReset();
+    validateProxyTargetUrl.mockResolvedValue(undefined);
+  });
+
   it('extracts relative HLS urls from share pages', () => {
     const html = `
       <script>
@@ -30,5 +76,27 @@ describe('playback url resolver', () => {
     expect(
       extractPlaybackUrlFromHtml(html, 'https://player.example.com/watch/1'),
     ).toBe('https://cdn.example.com/movie/index.m3u8?token=1&v=2');
+  });
+
+  it('resolves HLS urls from a nested iframe player page', async () => {
+    fetchWithValidatedRedirects
+      .mockResolvedValueOnce(
+        textResponse('<iframe src="/player/abc"></iframe>'),
+      )
+      .mockResolvedValueOnce(
+        textResponse(
+          '<script>window.player = {"url":"/media/index.m3u8?token=1"}</script>',
+        ),
+      );
+
+    const result = await resolveExternalPlaybackUrl(
+      'https://site.example/share/abc',
+    );
+
+    expect(result.mediaType).toBe('hls');
+    expect(result.resolvedUrl).toBe(
+      'https://site.example/media/index.m3u8?token=1',
+    );
+    expect(result.referer).toBe('https://site.example/player/abc');
   });
 });

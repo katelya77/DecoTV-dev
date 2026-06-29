@@ -117,24 +117,41 @@ async function handleAssetRequest(request: Request, method: 'GET' | 'HEAD') {
   }
 
   const refererToSend = resolveReferer(decodedUrl, request, referer);
-  const requestHeaders: Record<string, string> = {
-    Accept: '*/*',
-    'User-Agent': request.headers.get('user-agent') || DEFAULT_UA,
-  };
+  let fallbackReferer: string | undefined;
+  try {
+    fallbackReferer = new URL(decodedUrl).origin + '/';
+  } catch {
+    fallbackReferer = undefined;
+  }
+  const inboundReferer = normalizeHeaderUrl(request.headers.get('referer'));
+  const retryReferer =
+    fallbackReferer && fallbackReferer !== refererToSend
+      ? fallbackReferer
+      : inboundReferer && inboundReferer !== refererToSend
+        ? inboundReferer
+        : undefined;
 
-  if (refererToSend) {
-    requestHeaders.Referer = refererToSend;
-    try {
-      requestHeaders.Origin = new URL(refererToSend).origin;
-    } catch {
-      // ignore
+  const buildRequestHeaders = (refererValue?: string) => {
+    const headers: Record<string, string> = {
+      Accept: '*/*',
+      'User-Agent': request.headers.get('user-agent') || DEFAULT_UA,
+    };
+
+    if (refererValue) {
+      headers.Referer = refererValue;
+      try {
+        headers.Origin = new URL(refererValue).origin;
+      } catch {
+        // ignore
+      }
     }
-  }
 
-  const range = request.headers.get('range');
-  if (range) {
-    requestHeaders.Range = range;
-  }
+    const range = request.headers.get('range');
+    if (range) {
+      headers.Range = range;
+    }
+    return headers;
+  };
 
   let upstream: Response;
   try {
@@ -142,17 +159,52 @@ async function handleAssetRequest(request: Request, method: 'GET' | 'HEAD') {
       decodedUrl,
       {
         cache: 'no-store',
-        headers: requestHeaders,
+        headers: buildRequestHeaders(refererToSend),
         method,
       },
       { timeoutMs: FETCH_TIMEOUT_MS, maxRedirects: MAX_REDIRECTS },
     );
   } catch (e: any) {
-    return jsonError('Upstream fetch failed', 502, e?.message || 'unknown');
+    if (!retryReferer) {
+      return jsonError('Upstream fetch failed', 502, e?.message || 'unknown');
+    }
+    try {
+      upstream = await fetchWithValidatedRedirects(
+        decodedUrl,
+        {
+          cache: 'no-store',
+          headers: buildRequestHeaders(retryReferer),
+          method,
+        },
+        { timeoutMs: FETCH_TIMEOUT_MS, maxRedirects: MAX_REDIRECTS },
+      );
+    } catch (retryError: any) {
+      return jsonError(
+        'Upstream fetch failed',
+        502,
+        retryError?.message || e?.message || 'unknown',
+      );
+    }
   }
 
   if (!upstream.ok && upstream.status !== 206) {
-    return jsonError('Failed to fetch asset', upstream.status || 502);
+    if (retryReferer && (upstream.status === 403 || upstream.status === 404)) {
+      const retryUpstream = await fetchWithValidatedRedirects(
+        decodedUrl,
+        {
+          cache: 'no-store',
+          headers: buildRequestHeaders(retryReferer),
+          method,
+        },
+        { timeoutMs: FETCH_TIMEOUT_MS, maxRedirects: MAX_REDIRECTS },
+      ).catch(() => null);
+      if (retryUpstream && (retryUpstream.ok || retryUpstream.status === 206)) {
+        upstream = retryUpstream;
+      }
+    }
+    if (!upstream.ok && upstream.status !== 206) {
+      return jsonError('Failed to fetch asset', upstream.status || 502);
+    }
   }
 
   const headers = new Headers();

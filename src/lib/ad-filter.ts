@@ -170,6 +170,30 @@ export interface FilterResult {
   changed: boolean;
 }
 
+export function getPlaylistMediaStats(content: string) {
+  const durations = Array.from(content.matchAll(/^#EXTINF:([\d.]+)/gim))
+    .map((match) => Number(match[1]))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  return {
+    segmentCount: durations.length,
+    totalDuration: durations.reduce((sum, value) => sum + value, 0),
+  };
+}
+
+export function shouldBypassFilteredPlaylist(
+  original: string,
+  filtered: string,
+) {
+  const before = getPlaylistMediaStats(original);
+  const after = getPlaylistMediaStats(filtered);
+  if (before.segmentCount < 8 || before.totalDuration < 300) return false;
+  if (after.segmentCount === 0 || after.totalDuration === 0) return true;
+
+  const segmentRatio = after.segmentCount / before.segmentCount;
+  const durationRatio = after.totalDuration / before.totalDuration;
+  return segmentRatio < 0.5 || durationRatio < 0.6;
+}
+
 function isAdDomain(url: string, config: AdFilterConfig): boolean {
   if (!url) return false;
   const lowerUrl = url.toLowerCase();
