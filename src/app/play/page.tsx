@@ -742,12 +742,29 @@ function PlayPageClient() {
 
   const getPrivatePlaybackIdentity = () => {
     const detailValue = detailRef.current;
+    const activeEpisodeUrl =
+      detailValue?.episodes?.[currentEpisodeIndexRef.current] || videoUrl;
+    let activeEpisodeSourceItemId = '';
+
+    if (typeof window !== 'undefined' && activeEpisodeUrl) {
+      try {
+        activeEpisodeSourceItemId =
+          new URL(activeEpisodeUrl, window.location.origin).searchParams.get(
+            'sourceItemId',
+          ) || '';
+      } catch {
+        activeEpisodeSourceItemId = '';
+      }
+    }
+
     const connectorId =
       detailValue?.connector_id ||
       initialPrivateConnectorId ||
       currentIdRef.current.split(':')[0];
     const sourceItemId =
-      detailValue?.source_item_id || initialPrivateSourceItemId;
+      activeEpisodeSourceItemId ||
+      detailValue?.source_item_id ||
+      initialPrivateSourceItemId;
 
     return {
       connectorId,

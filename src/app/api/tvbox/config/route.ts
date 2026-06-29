@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getConfig } from '@/lib/config';
+import { getEffectiveRequestOrigin } from '@/lib/request-protocol';
 import { getSpiderJar } from '@/lib/spiderJar';
 import {
   buildResolutionFilterFromSearchParams,
@@ -76,21 +77,7 @@ function getRequestBaseUrl(req: NextRequest): string {
     .replace(/\/$/, '');
   if (envBase) return envBase;
 
-  const requestUrl = new URL(req.url);
-  const forwardedProto = (req.headers.get('x-forwarded-proto') || '')
-    .split(',')[0]
-    .trim();
-  const forwardedHost = (
-    req.headers.get('x-forwarded-host') ||
-    req.headers.get('host') ||
-    ''
-  )
-    .split(',')[0]
-    .trim();
-  const protocol = forwardedProto || requestUrl.protocol.replace(':', '');
-  const host = forwardedHost || requestUrl.host;
-
-  return `${protocol}://${host}`;
+  return getEffectiveRequestOrigin(req);
 }
 
 function isPublicBaseUrl(baseUrl: string): boolean {
@@ -499,13 +486,16 @@ export async function GET(req: NextRequest) {
     const includeDoubanNavigation =
       searchParams.get('douban') !== 'off' &&
       searchParams.get('douban') !== 'false';
+    const enableDoubanKeywordSearch =
+      searchParams.get('doubanSearch') === 'on' ||
+      searchParams.get('doubanSearch') === 'true';
     const doubanSite = {
       key: 'decotv_douban',
       name: '豆瓣导航',
       type: 1,
       api: `${baseUrl}/api/tvbox/douban`,
-      searchable: 1,
-      quickSearch: 1,
+      searchable: enableDoubanKeywordSearch ? 1 : 0,
+      quickSearch: enableDoubanKeywordSearch ? 1 : 0,
       filterable: 1,
       changeable: 0,
       header: {
@@ -603,9 +593,11 @@ export async function GET(req: NextRequest) {
             };
           }
 
-          // 强制启用所有搜索功能，提升切换体验
-          optimizedSite.searchable = 1;
-          optimizedSite.quickSearch = 1;
+          // 强制启用普通源搜索功能，豆瓣导航默认只做分类导航。
+          optimizedSite.searchable =
+            optimizedSite.key === 'decotv_douban' ? doubanSite.searchable : 1;
+          optimizedSite.quickSearch =
+            optimizedSite.key === 'decotv_douban' ? doubanSite.quickSearch : 1;
           optimizedSite.filterable = 1;
 
           // 影视仓特有优化
@@ -705,9 +697,11 @@ export async function GET(req: NextRequest) {
             };
           }
 
-          // 强制启用快速切换相关功能
-          fastSite.searchable = 1;
-          fastSite.quickSearch = 1;
+          // 强制启用普通源快速切换相关功能，豆瓣导航默认不参与关键词搜索。
+          fastSite.searchable =
+            fastSite.key === 'decotv_douban' ? doubanSite.searchable : 1;
+          fastSite.quickSearch =
+            fastSite.key === 'decotv_douban' ? doubanSite.quickSearch : 1;
           fastSite.filterable = 1;
           fastSite.changeable = 1;
 
@@ -909,6 +903,7 @@ export async function GET(req: NextRequest) {
         : 'remote';
     tvboxConfig.client_region = resolveClientRegion(req, searchParams);
     tvboxConfig.douban_navigation = includeDoubanNavigation;
+    tvboxConfig.douban_keyword_search = enableDoubanKeywordSearch;
 
     // 提供备用字段：仅用于调试，不影响体检
     (tvboxConfig as any).spider_backup =

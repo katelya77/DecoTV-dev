@@ -79,6 +79,32 @@ describe('request protocol detection', () => {
     );
   });
 
+  it('combines forwarded host and forwarded port for non-standard HTTPS ports', () => {
+    const request = requestLike('http://127.0.0.1:3000/api/tvbox/config', {
+      'x-forwarded-proto': 'https',
+      'x-forwarded-host': 'tv.example.com',
+      'x-forwarded-port': '8443',
+      host: '127.0.0.1:3000',
+    });
+
+    expect(getEffectiveRequestHost(request)).toBe('tv.example.com:8443');
+    expect(getEffectiveRequestOrigin(request)).toBe(
+      'https://tv.example.com:8443',
+    );
+  });
+
+  it('uses a matching Host port when X-Forwarded-Host omits it', () => {
+    const request = requestLike('http://127.0.0.1:3000/api/tvbox/config', {
+      'x-forwarded-proto': 'https',
+      'x-forwarded-host': 'tv.example.com',
+      host: 'tv.example.com:8443',
+    });
+
+    expect(getEffectiveRequestOrigin(request)).toBe(
+      'https://tv.example.com:8443',
+    );
+  });
+
   it('falls back to the standard Forwarded host value', () => {
     const request = requestLike('http://127.0.0.1:3000/api/login', {
       forwarded: 'for=192.0.2.60;proto=https;host="tv.example.com:9443"',

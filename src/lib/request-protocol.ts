@@ -40,6 +40,81 @@ function normalizeHost(value: string | null): string | null {
   return normalized;
 }
 
+function normalizePort(
+  value: string | null,
+  protocol: EffectiveRequestProtocol,
+): string | null {
+  const normalized = firstHeaderValue(value)?.replace(/^"|"$/g, '').trim();
+  if (!normalized || !/^\d{1,5}$/.test(normalized)) return null;
+
+  const port = Number(normalized);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+  if (
+    (protocol === 'https' && port === 443) ||
+    (protocol === 'http' && port === 80)
+  ) {
+    return null;
+  }
+
+  return String(port);
+}
+
+function hasExplicitPort(host: string): boolean {
+  if (host.startsWith('[')) {
+    return /\]:\d+$/.test(host);
+  }
+
+  const firstColon = host.indexOf(':');
+  if (firstColon === -1) return false;
+  if (firstColon !== host.lastIndexOf(':')) return false;
+  return /^\d+$/.test(host.slice(firstColon + 1));
+}
+
+function getHostname(host: string): string {
+  try {
+    return new URL(`http://${host}`).hostname.toLowerCase();
+  } catch {
+    return host.replace(/:\d+$/, '').toLowerCase();
+  }
+}
+
+function getPortFromHost(host: string): string | null {
+  try {
+    const parsed = new URL(`http://${host}`);
+    return parsed.port || null;
+  } catch {
+    if (!hasExplicitPort(host)) return null;
+    return host.slice(host.lastIndexOf(':') + 1);
+  }
+}
+
+function appendPortIfNeeded(host: string, port: string | null): string {
+  if (!port || hasExplicitPort(host)) return host;
+  return `${host}:${port}`;
+}
+
+function normalizeForwardedHost(
+  host: string | null,
+  requestHost: string | null,
+  forwardedPort: string | null,
+): string | null {
+  if (!host) return null;
+
+  const withForwardedPort = appendPortIfNeeded(host, forwardedPort);
+  if (withForwardedPort !== host) return withForwardedPort;
+
+  if (
+    requestHost &&
+    !hasExplicitPort(host) &&
+    hasExplicitPort(requestHost) &&
+    getHostname(host) === getHostname(requestHost)
+  ) {
+    return appendPortIfNeeded(host, getPortFromHost(requestHost));
+  }
+
+  return host;
+}
+
 function getForwardedHost(header: string | null): string | null {
   const firstForwarded = firstHeaderValue(header);
   if (!firstForwarded) return null;
@@ -90,13 +165,27 @@ export function isSecureRequest(request: RequestWithUrl): boolean {
 }
 
 export function getEffectiveRequestHost(request: RequestWithUrl): string {
-  return (
-    normalizeHost(firstHeaderValue(request.headers.get('x-forwarded-host'))) ||
-    getForwardedHost(request.headers.get('forwarded')) ||
+  const protocol = getEffectiveRequestProtocol(request);
+  const requestHost =
     normalizeHost(request.headers.get('host')) ||
     getRequestUrl(request)?.host ||
-    ''
+    '';
+  const forwardedPort = normalizePort(
+    request.headers.get('x-forwarded-port'),
+    protocol,
   );
+  const forwardedHost = normalizeForwardedHost(
+    normalizeHost(firstHeaderValue(request.headers.get('x-forwarded-host'))),
+    requestHost,
+    forwardedPort,
+  );
+  const standardForwardedHost = normalizeForwardedHost(
+    getForwardedHost(request.headers.get('forwarded')),
+    requestHost,
+    forwardedPort,
+  );
+
+  return forwardedHost || standardForwardedHost || requestHost || '';
 }
 
 export function getEffectiveRequestOrigin(request: RequestWithUrl): string {

@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { AdminConfig } from '@/lib/admin.types';
 import { getConfig } from '@/lib/config';
 import { signM3U8ProxyRequest } from '@/lib/m3u8-proxy';
+import { getEffectiveRequestOrigin } from '@/lib/request-protocol';
 import { SearchResult } from '@/lib/types';
 
 // Browser playback defaults to the filter proxy so upstream ad segments can be
@@ -80,12 +81,7 @@ function buildFilterProxyUrl(
   const signature = signM3U8ProxyRequest(upstreamUrl);
   if (!signature) return upstreamUrl;
 
-  const host = request.headers.get('host');
-  const protocol =
-    request.headers.get('x-forwarded-proto') ||
-    request.nextUrl.protocol.replace(':', '') ||
-    'http';
-  return `${protocol}://${host}/api/proxy/m3u8-filter?url=${encodeURIComponent(
+  return `${getEffectiveRequestOrigin(request)}/api/proxy/m3u8-filter?url=${encodeURIComponent(
     upstreamUrl,
   )}&sig=${encodeURIComponent(signature)}`;
 }

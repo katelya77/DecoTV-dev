@@ -22,6 +22,15 @@ export type PrivateLibraryConnectorType =
   | 'jellyfin'
   | 'xiaoya';
 
+export interface PrivateLibraryEpisodeItem {
+  sourceItemId: string;
+  title: string;
+  streamPath: string;
+  season?: number;
+  episode?: number;
+  embeddedStreamUrl?: string;
+}
+
 export interface PrivateLibraryItem {
   id: string;
   connectorId: string;
@@ -49,6 +58,7 @@ export interface PrivateLibraryItem {
   scannedAt: number;
   sortKey: number;
   embeddedStreamUrl?: string;
+  episodeItems?: PrivateLibraryEpisodeItem[];
 }
 
 export interface PrivateLibraryProgressPayload {
@@ -206,7 +216,7 @@ const PRIVATE_LIBRARY_CLIENT_DEVICE = 'DecoTV Web';
 const PRIVATE_LIBRARY_CLIENT_VERSION = '1.0.0';
 const XIAOYA_MAX_SCAN_DEPTH = 8;
 const MEDIA_FILE_REGEX = /\.(mkv|mp4|m3u8|mov|avi|flv|ts|strm)$/i;
-const OPENLIST_MEDIA_FILE_REGEX = /\.(mkv|mp4|m3u8|mov|avi|flv|ts)$/i;
+const OPENLIST_MEDIA_FILE_REGEX = MEDIA_FILE_REGEX;
 
 function sanitizeString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
@@ -322,6 +332,21 @@ function joinPath(basePath: string, name: string): string {
   return `${base}/${cleanName}`;
 }
 
+function buildAlistDownloadUrl(
+  connector: PrivateLibraryConnector,
+  path: string,
+): string {
+  const baseUrl = connector.serverUrl.replace(/\/+$/, '');
+  const encodedPath = normalizePath(path)
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+
+  return `${baseUrl}/d${
+    encodedPath.startsWith('/') ? encodedPath : `/${encodedPath}`
+  }`;
+}
+
 function getPathName(path: string): string {
   const normalized = normalizePath(path);
   const parts = normalized.split('/').filter(Boolean);
@@ -333,6 +358,35 @@ function stripMediaExtension(name: string): string {
     /\.(mkv|mp4|m3u8|mov|avi|flv|ts|strm)$/i,
     '',
   );
+}
+
+function isStrmFile(name: string): boolean {
+  return /\.strm$/i.test(name);
+}
+
+function isTvLibraryContext(value?: string): boolean {
+  const normalized = sanitizeString(value).toLowerCase();
+  if (!normalized) return false;
+
+  return /剧|剧集|电视剧|综艺|番剧|动漫|动画|season|series|show|tv/.test(
+    normalized,
+  );
+}
+
+function formatEpisodeTitle(
+  fileName: string,
+  season?: number,
+  episode?: number,
+  fallbackIndex?: number,
+): string {
+  const rawTitle = stripMediaExtension(fileName);
+  if (season && episode) {
+    return `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
+  }
+  if (episode) {
+    return `第${episode}集`;
+  }
+  return rawTitle || `第${(fallbackIndex || 0) + 1}集`;
 }
 
 function parseTmdbId(input: string): number | undefined {
@@ -379,14 +433,28 @@ function parseEpisodeInfo(pathOrName: string): {
   season?: number;
   episode?: number;
 } {
-  const match = pathOrName.match(/S(\d{1,2})E(\d{1,2})/i);
-  if (!match) {
+  const seasonEpisodeMatch = pathOrName.match(/S(\d{1,2})E(\d{1,4})/i);
+  if (seasonEpisodeMatch) {
+    return {
+      season: Number(seasonEpisodeMatch[1]),
+      episode: Number(seasonEpisodeMatch[2]),
+    };
+  }
+
+  const seasonMatch =
+    pathOrName.match(/(?:season|第)\s*(\d{1,2})\s*(?:季)?/i) ||
+    pathOrName.match(/\/S(\d{1,2})(?:\/|$)/i);
+  const episodeMatch =
+    pathOrName.match(/第\s*(\d{1,4})\s*[集期话話]/) ||
+    pathOrName.match(/(?:^|[\s._-])(?:ep?|episode)\s*\.?\s*(\d{1,4})(?=\D|$)/i);
+
+  if (!seasonMatch && !episodeMatch) {
     return {};
   }
 
   return {
-    season: Number(match[1]),
-    episode: Number(match[2]),
+    season: seasonMatch ? Number(seasonMatch[1]) : undefined,
+    episode: episodeMatch ? Number(episodeMatch[1]) : undefined,
   };
 }
 
@@ -914,10 +982,11 @@ function extractFirstHttpUrl(value: unknown): string {
   return '';
 }
 
-async function readXiaoyaStrmTargetUrl(
+async function readAlistStrmTargetUrl(
   connector: PrivateLibraryConnector,
   path: string,
 ): Promise<string> {
+  const serviceName = getAlistServiceName(connector.type);
   const fileInfo = await getAlistFileInfo(connector, path);
   const inlineContent = sanitizeString(fileInfo?.content);
   if (inlineContent) {
@@ -925,21 +994,35 @@ async function readXiaoyaStrmTargetUrl(
   }
 
   const rawUrl = sanitizeString(fileInfo?.raw_url);
-  if (!rawUrl) {
-    return '';
+  if (rawUrl) {
+    try {
+      const text = await fetchTextWithTimeout(
+        rawUrl,
+        {
+          method: 'GET',
+          headers: {
+            Accept: 'text/plain,*/*',
+          },
+        },
+        PRIVATE_LIBRARY_CONTROL_TIMEOUT_MS,
+        serviceName,
+      );
+      const url = extractFirstHttpUrl(text);
+      if (url) return url;
+    } catch {
+      // fall through to the authenticated download endpoint
+    }
   }
 
   try {
     const text = await fetchTextWithTimeout(
-      rawUrl,
+      buildAlistDownloadUrl(connector, path),
       {
         method: 'GET',
-        headers: {
-          Accept: 'text/plain,*/*',
-        },
+        headers: await buildAlistHeaders(connector),
       },
       PRIVATE_LIBRARY_CONTROL_TIMEOUT_MS,
-      '小雅 Alist',
+      serviceName,
     );
     return extractFirstHttpUrl(text);
   } catch {
@@ -1211,20 +1294,32 @@ async function scanOpenList(
     const mediaFiles = children.filter(
       (entry) => !entry.is_dir && OPENLIST_MEDIA_FILE_REGEX.test(entry.name),
     );
+    const isSeriesDirectory =
+      mediaFiles.length > 1 ||
+      isTvLibraryContext(dir.name) ||
+      isTvLibraryContext(rootPath);
 
     for (const media of mediaFiles) {
       const mediaPath =
         sanitizeString(media.path) || joinPath(dirPath, media.name);
       const { season, episode } = parseEpisodeInfo(`${dirPath}/${media.name}`);
-      const mediaType: 'movie' | 'tv' = season || episode ? 'tv' : 'movie';
+      const mediaType: 'movie' | 'tv' =
+        season || episode || isSeriesDirectory ? 'tv' : 'movie';
       const sourceItemId = `${dirPath}::${mediaPath}`;
+      const embeddedStreamUrl = isStrmFile(media.name)
+        ? await readAlistStrmTargetUrl(connector, mediaPath).catch(() => '')
+        : '';
+
+      if (isStrmFile(media.name) && !embeddedStreamUrl) {
+        continue;
+      }
 
       items.push({
         id: `${connector.id}:${Buffer.from(sourceItemId).toString('base64url')}`,
         connectorId: connector.id,
         connectorType: connector.type,
         sourceItemId,
-        title: season || episode ? stripMediaExtension(media.name) : title,
+        title,
         searchTitle: title,
         year,
         tmdbId,
@@ -1234,6 +1329,7 @@ async function scanOpenList(
         episode,
         scannedAt,
         sortKey: items.length,
+        embeddedStreamUrl,
       });
     }
   }
@@ -1346,16 +1442,21 @@ async function scanXiaoyaDirectory(
     const mediaType: 'movie' | 'tv' =
       season || episode
         ? 'tv'
-        : nextContext.libraryName?.includes('剧')
+        : isTvLibraryContext(nextContext.libraryName) ||
+            isTvLibraryContext(nextContext.title)
           ? 'tv'
           : 'movie';
     const title =
       mediaType === 'tv' && (season || episode)
         ? stripMediaExtension(entry.name)
         : nextContext.title || stripMediaExtension(entry.name);
-    const embeddedStreamUrl = /\.strm$/i.test(entry.name)
-      ? await readXiaoyaStrmTargetUrl(connector, entryPath).catch(() => '')
+    const embeddedStreamUrl = isStrmFile(entry.name)
+      ? await readAlistStrmTargetUrl(connector, entryPath).catch(() => '')
       : '';
+
+    if (isStrmFile(entry.name) && !embeddedStreamUrl) {
+      continue;
+    }
 
     items.push({
       id: `${connector.id}:${Buffer.from(entryPath).toString('base64url')}`,
@@ -1470,6 +1571,98 @@ async function scanEmbyLike(
   return items;
 }
 
+function comparePrivateEpisodes(
+  left: PrivateLibraryItem,
+  right: PrivateLibraryItem,
+): number {
+  const seasonDelta = (left.season || 0) - (right.season || 0);
+  if (seasonDelta !== 0) return seasonDelta;
+
+  const episodeDelta = (left.episode || 0) - (right.episode || 0);
+  if (episodeDelta !== 0) return episodeDelta;
+
+  return left.sortKey - right.sortKey;
+}
+
+function getPrivateLibrarySeriesKey(item: PrivateLibraryItem): string {
+  const title = normalizeLookupTitle(item.searchTitle || item.title);
+  return [
+    item.connectorId,
+    item.tmdbId ? `tmdb:${item.tmdbId}` : `title:${title}`,
+    item.year || 'unknown',
+    sanitizeString(item.libraryName).toLowerCase(),
+  ].join(':');
+}
+
+export function aggregatePrivateLibraryItems(
+  items: PrivateLibraryItem[],
+): PrivateLibraryItem[] {
+  const grouped = new Map<string, PrivateLibraryItem[]>();
+  const passthrough: PrivateLibraryItem[] = [];
+
+  for (const item of items) {
+    if (
+      item.mediaType !== 'tv' ||
+      (item.connectorType !== 'openlist' && item.connectorType !== 'xiaoya')
+    ) {
+      passthrough.push(item);
+      continue;
+    }
+
+    const key = getPrivateLibrarySeriesKey(item);
+    const list = grouped.get(key) || [];
+    list.push(item);
+    grouped.set(key, list);
+  }
+
+  for (const [key, group] of grouped.entries()) {
+    if (group.length === 1) {
+      passthrough.push(group[0]);
+      continue;
+    }
+
+    const sorted = [...group].sort(comparePrivateEpisodes);
+    const base = sorted[0];
+    const episodeItems: PrivateLibraryEpisodeItem[] = sorted.map(
+      (item, index) => ({
+        sourceItemId: item.sourceItemId,
+        title: formatEpisodeTitle(
+          getPathName(item.streamPath) || item.title,
+          item.season,
+          item.episode,
+          index,
+        ),
+        streamPath: item.streamPath,
+        season: item.season,
+        episode: item.episode,
+        embeddedStreamUrl: item.embeddedStreamUrl,
+      }),
+    );
+    const seasons = new Set(
+      sorted
+        .map((item) => item.season)
+        .filter((season): season is number => Boolean(season)),
+    );
+
+    passthrough.push({
+      ...base,
+      id: `${base.connectorId}:${Buffer.from(`series:${key}`).toString('base64url')}`,
+      title: base.searchTitle || base.title,
+      season: undefined,
+      episode: undefined,
+      sourceItemId: episodeItems[0].sourceItemId,
+      streamPath: episodeItems[0].streamPath,
+      embeddedStreamUrl: episodeItems[0].embeddedStreamUrl,
+      episodeCount: episodeItems.length,
+      seasonCount: seasons.size > 0 ? seasons.size : base.seasonCount,
+      sortKey: Math.min(...sorted.map((item) => item.sortKey)),
+      episodeItems,
+    });
+  }
+
+  return passthrough.sort((left, right) => left.sortKey - right.sortKey);
+}
+
 function getConnectorCacheKey(connectorId: string): string {
   return `${PRIVATE_LIBRARY_CACHE_PREFIX}:${connectorId}:items`;
 }
@@ -1538,6 +1731,7 @@ export async function scanConnector(
     items = await scanEmbyLike(connector);
   }
 
+  items = aggregatePrivateLibraryItems(items);
   setServerCache(getConnectorCacheKey(connector.id), items, 3600);
   return items;
 }
@@ -1739,14 +1933,36 @@ export async function resolvePrivateLibraryAudioStreams(
     .sort((left, right) => left.index - right.index);
 }
 
+function findCachedAlistItem(
+  connectorId: string,
+  sourceItemId: string,
+): {
+  item?: PrivateLibraryItem;
+  episode?: PrivateLibraryEpisodeItem;
+} {
+  const cachedItems = getConnectorCachedItems(connectorId);
+
+  for (const item of cachedItems) {
+    if (item.sourceItemId === sourceItemId) {
+      return { item };
+    }
+
+    const episode = item.episodeItems?.find(
+      (entry) => entry.sourceItemId === sourceItemId,
+    );
+    if (episode) {
+      return { item, episode };
+    }
+  }
+
+  return {};
+}
+
 async function resolveXiaoyaPlaybackUrl(
   connector: PrivateLibraryConnector,
   sourceItemId: string,
 ): Promise<string> {
-  const cachedItems = getConnectorCachedItems(connector.id);
-  const cachedItem = cachedItems.find(
-    (item) => item.sourceItemId === sourceItemId,
-  );
+  const cached = findCachedAlistItem(connector.id, sourceItemId);
   const fileInfo = await getAlistFileInfo(connector, sourceItemId).catch(
     () => undefined,
   );
@@ -1757,7 +1973,8 @@ async function resolveXiaoyaPlaybackUrl(
     await callXiaoyaFsOther(connector, sourceItemId, 'down_url').catch(
       () => '',
     ),
-    sanitizeString(cachedItem?.embeddedStreamUrl),
+    sanitizeString(cached.episode?.embeddedStreamUrl),
+    sanitizeString(cached.item?.embeddedStreamUrl),
     sanitizeString(fileInfo?.raw_url),
   ];
 
@@ -1786,14 +2003,18 @@ export async function resolveStreamRequest(
   }
 
   if (connector.type === 'openlist') {
+    const cached = findCachedAlistItem(connector.id, sourceItemId);
+    const embeddedStreamUrl =
+      sanitizeString(cached.episode?.embeddedStreamUrl) ||
+      sanitizeString(cached.item?.embeddedStreamUrl);
+    if (embeddedStreamUrl) {
+      return { url: embeddedStreamUrl };
+    }
+
     const targetPath = sourceItemId.split('::')[1] || sourceItemId;
-    const encodedPath = targetPath
-      .split('/')
-      .map((segment) => encodeURIComponent(segment))
-      .join('/');
 
     return {
-      url: `${connector.serverUrl}/d${encodedPath.startsWith('/') ? encodedPath : `/${encodedPath}`}`,
+      url: buildAlistDownloadUrl(connector, targetPath),
       headers: await buildAlistHeaders(connector),
     };
   }

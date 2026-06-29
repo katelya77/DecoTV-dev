@@ -296,6 +296,10 @@ export async function GET(request: NextRequest) {
         detail: targetSource.detail,
       },
       query,
+      {
+        includeUnplayable: true,
+        skipCache: true,
+      },
     );
 
     console.log(
