@@ -74,16 +74,22 @@ export function shouldUseServerSideEpisodeProxy(
   return true;
 }
 
-function buildFilterProxyUrl(
+export function buildFilterProxyUrl(
   request: NextRequest,
   upstreamUrl: string,
+  referer?: string,
 ): string {
-  const signature = signM3U8ProxyRequest(upstreamUrl);
+  const signature = signM3U8ProxyRequest(upstreamUrl, referer);
   if (!signature) return upstreamUrl;
 
-  return `${getEffectiveRequestOrigin(request)}/api/proxy/m3u8-filter?url=${encodeURIComponent(
-    upstreamUrl,
-  )}&sig=${encodeURIComponent(signature)}`;
+  const proxyUrl = new URL(
+    '/api/proxy/m3u8-filter',
+    getEffectiveRequestOrigin(request),
+  );
+  proxyUrl.searchParams.set('url', upstreamUrl);
+  if (referer) proxyUrl.searchParams.set('referer', referer);
+  proxyUrl.searchParams.set('sig', signature);
+  return proxyUrl.toString();
 }
 
 function shouldRewriteEpisode(url: string): boolean {
@@ -93,7 +99,7 @@ function shouldRewriteEpisode(url: string): boolean {
   return true;
 }
 
-function isSourceDisabled(
+export function isSourceAdFilterDisabled(
   adminConfig: AdminConfig | null,
   sourceKey: string | undefined,
 ): boolean {
@@ -120,7 +126,7 @@ export async function rewriteEpisodesForAdFilter<
   const adminConfig = await safeGetConfig();
   if (!shouldUseServerSideEpisodeProxy(adminConfig, request)) return result;
   if (result.source === 'private_library') return result;
-  if (isSourceDisabled(adminConfig, result.source)) return result;
+  if (isSourceAdFilterDisabled(adminConfig, result.source)) return result;
   if (!Array.isArray(result.episodes) || result.episodes.length === 0)
     return result;
 
@@ -140,7 +146,7 @@ export async function rewriteEpisodesForAdFilterMany(
 
   // 对每条结果按"源是否豁免"独立判断
   return results.map((r) => {
-    if (isSourceDisabled(adminConfig, r.source)) return r;
+    if (isSourceAdFilterDisabled(adminConfig, r.source)) return r;
     if (r.source === 'private_library') return r;
     if (!Array.isArray(r.episodes) || r.episodes.length === 0) return r;
     const rewritten = r.episodes.map((ep) =>

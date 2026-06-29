@@ -161,6 +161,7 @@ function isPublicModeAllowedPath(pathname: string): boolean {
     '/api/proxy',
     '/api/live',
     '/api/pansou',
+    '/api/playback',
     '/api/tmdb',
     '/api/private-library',
     '/api/source-browser',

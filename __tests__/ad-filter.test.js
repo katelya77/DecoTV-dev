@@ -21,4 +21,24 @@ describe('ad filter', () => {
     expect(result.filtered).not.toContain('vip.ffzyad.com');
     expect(result.filtered).toContain('video.example.com/main.ts');
   });
+
+  it('keeps long-form content when discontinuity heuristics would remove most segments', () => {
+    const lines = ['#EXTM3U', '#EXT-X-VERSION:3', '#EXT-X-TARGETDURATION:6'];
+    for (let group = 0; group < 20; group++) {
+      lines.push('#EXT-X-DISCONTINUITY');
+      for (let index = 0; index < 10; index++) {
+        lines.push('#EXTINF:6.0,');
+        lines.push(`https://video.example.com/g${group}/main-${index}.ts`);
+      }
+    }
+    lines.push('#EXT-X-ENDLIST');
+
+    const result = filterM3U8(lines.join('\n'));
+
+    expect(result.changed).toBe(false);
+    expect(result.adsRemoved).toBe(0);
+    expect(result.filtered).toContain(
+      'https://video.example.com/g19/main-9.ts',
+    );
+  });
 });

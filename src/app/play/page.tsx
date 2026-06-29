@@ -127,6 +127,16 @@ interface AudioTrackSelectorItem {
   trackHlsIndex?: number;
 }
 
+interface PlaybackResolveResponse {
+  playbackUrl?: string;
+  resolvedUrl?: string;
+  originalUrl?: string;
+  mediaType?: 'hls' | 'file' | 'page' | 'unknown';
+  resolved?: boolean;
+  proxied?: boolean;
+  error?: string;
+}
+
 interface DanmukuSettings {
   speed: number;
   opacity: number;
@@ -684,6 +694,8 @@ function PlayPageClient() {
   const [precomputedVideoInfo, setPrecomputedVideoInfo] = useState<
     Map<string, VideoSourceTestResult>
   >(new Map());
+  const playbackUrlCacheRef = useRef<Map<string, string>>(new Map());
+  const videoUrlResolveSeqRef = useRef(0);
 
   // 折叠状态（仅在 lg 及以上屏幕有效）
   const [isEpisodeSelectorCollapsed, setIsEpisodeSelectorCollapsed] =
@@ -771,6 +783,83 @@ function PlayPageClient() {
       sourceItemId,
     };
   };
+
+  const resolvePlaybackUrl = useCallback(
+    async (
+      rawUrl: string,
+      sourceKey?: string,
+      signal?: AbortSignal,
+    ): Promise<string> => {
+      const trimmedUrl = (rawUrl || '').trim();
+      if (!trimmedUrl) return '';
+
+      const isInternalUrl = (() => {
+        try {
+          const parsed = new URL(
+            trimmedUrl,
+            typeof window !== 'undefined'
+              ? window.location.origin
+              : 'http://localhost',
+          );
+          return (
+            parsed.pathname.startsWith('/api/private-library/') ||
+            parsed.pathname.startsWith('/api/proxy/m3u8-filter') ||
+            parsed.pathname.startsWith('/api/proxy/m3u8-asset') ||
+            parsed.pathname.startsWith('/api/proxy/m3u8')
+          );
+        } catch {
+          return !/^https?:\/\//i.test(trimmedUrl);
+        }
+      })();
+
+      if (isInternalUrl || isPrivateLibrarySource(sourceKey || '')) {
+        return trimmedUrl;
+      }
+
+      const cacheKey = `${sourceKey || currentSourceRef.current || ''}|${trimmedUrl}`;
+      const cachedUrl = playbackUrlCacheRef.current.get(cacheKey);
+      if (cachedUrl) return cachedUrl;
+
+      const params = new URLSearchParams();
+      params.set('url', trimmedUrl);
+      const effectiveSource = sourceKey || currentSourceRef.current;
+      if (effectiveSource) params.set('source', effectiveSource);
+
+      try {
+        if (typeof window !== 'undefined') {
+          const currentUrl = new URL(window.location.href);
+          const adfilter = currentUrl.searchParams.get('adfilter');
+          if (adfilter) params.set('adfilter', adfilter);
+        }
+      } catch {
+        // ignore
+      }
+
+      try {
+        const response = await fetch(`/api/playback/resolve?${params}`, {
+          cache: 'no-store',
+          signal,
+        });
+        if (!response.ok) {
+          throw new Error(`resolve failed: ${response.status}`);
+        }
+
+        const payload = (await response.json()) as PlaybackResolveResponse;
+        const resolvedUrl = payload.playbackUrl || payload.resolvedUrl || '';
+        if (resolvedUrl && payload.mediaType !== 'page') {
+          playbackUrlCacheRef.current.set(cacheKey, resolvedUrl);
+          return resolvedUrl;
+        }
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+          console.warn('Resolve playback url failed:', error);
+        }
+      }
+
+      return trimmedUrl;
+    },
+    [],
+  );
 
   const isPrivateEmbyLikeSource =
     isPrivateLibrarySource(currentSource) &&
@@ -1444,7 +1533,12 @@ function PlayPageClient() {
         };
       }
 
-      const testResult = await getVideoResolutionFromM3u8(episodeUrl, {
+      const playbackUrl = await resolvePlaybackUrl(
+        episodeUrl,
+        source.source,
+        controller.signal,
+      );
+      const testResult = await getVideoResolutionFromM3u8(playbackUrl, {
         timeoutMs: autoProbeTimeoutMs,
         signal: controller.signal,
       });
@@ -1514,7 +1608,7 @@ function PlayPageClient() {
   };
 
   // 更新视频地址
-  const updateVideoUrl = (
+  const updateVideoUrl = async (
     detailData: SearchResult | null,
     episodeIndex: number,
   ) => {
@@ -1526,7 +1620,18 @@ function PlayPageClient() {
       setVideoUrl('');
       return;
     }
-    const newUrl = detailData?.episodes[episodeIndex] || '';
+    const rawUrl = detailData?.episodes[episodeIndex] || '';
+    if (!rawUrl) {
+      setVideoUrl('');
+      return;
+    }
+
+    const resolveSeq = ++videoUrlResolveSeqRef.current;
+    const newUrl = await resolvePlaybackUrl(rawUrl, detailData.source);
+    if (resolveSeq !== videoUrlResolveSeqRef.current) {
+      return;
+    }
+
     if (newUrl !== videoUrl) {
       setVideoUrl(newUrl);
     }
@@ -2140,7 +2245,7 @@ function PlayPageClient() {
 
   // 当集数索引变化时自动更新视频地址
   useEffect(() => {
-    updateVideoUrl(detail, currentEpisodeIndex);
+    void updateVideoUrl(detail, currentEpisodeIndex);
   }, [detail, currentEpisodeIndex]);
 
   // 进入页面时直接获取全部源信息

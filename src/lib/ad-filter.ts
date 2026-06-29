@@ -122,6 +122,10 @@ export const DEFAULT_AD_FILTER_CONFIG: AdFilterConfig = {
   ],
 };
 
+const MAX_HEURISTIC_REMOVAL_RATIO = 0.35;
+const MIN_LONG_FORM_DURATION = 10 * 60;
+const MIN_LONG_FORM_REMAINING_RATIO = 0.5;
+
 const FORCE_AD_DOMAIN_PATTERNS = [
   'ffzyad',
   'vip.ffzyad.com',
@@ -283,6 +287,43 @@ function detectAdSegments(
   return adSegmentIndices;
 }
 
+function detectDomainAdSegments(segments: ParsedSegment[]): Set<number> {
+  const adSegmentIndices = new Set<number>();
+  segments.forEach((seg, idx) => {
+    if (seg.isAdDomain) adSegmentIndices.add(idx);
+  });
+  return adSegmentIndices;
+}
+
+function sumSegmentDuration(
+  segments: ParsedSegment[],
+  indices: Set<number>,
+): number {
+  let duration = 0;
+  indices.forEach((idx) => {
+    duration += segments[idx]?.duration || 0;
+  });
+  return duration;
+}
+
+function shouldFallbackToDomainOnlyFiltering(
+  parsed: ParsedM3U8,
+  adsDuration: number,
+): boolean {
+  if (parsed.totalDuration <= 0 || adsDuration <= 0) {
+    return false;
+  }
+
+  const removalRatio = adsDuration / parsed.totalDuration;
+  const remainingDuration = parsed.totalDuration - adsDuration;
+
+  return (
+    removalRatio > MAX_HEURISTIC_REMOVAL_RATIO ||
+    (parsed.totalDuration >= MIN_LONG_FORM_DURATION &&
+      remainingDuration / parsed.totalDuration < MIN_LONG_FORM_REMAINING_RATIO)
+  );
+}
+
 /**
  * 过滤 M3U8 文本，移除广告分段。
  *
@@ -311,16 +352,26 @@ export function filterM3U8(
     return { filtered: content, adsRemoved: 0, adsDuration: 0, changed: false };
   }
 
-  const adIndices = detectAdSegments(parsed.segments, config);
+  let adIndices = detectAdSegments(parsed.segments, config);
 
   if (adIndices.size === 0) {
     return { filtered: content, adsRemoved: 0, adsDuration: 0, changed: false };
   }
 
-  let adsDuration = 0;
-  adIndices.forEach((idx) => {
-    adsDuration += parsed.segments[idx].duration;
-  });
+  let adsDuration = sumSegmentDuration(parsed.segments, adIndices);
+  if (shouldFallbackToDomainOnlyFiltering(parsed, adsDuration)) {
+    adIndices = detectDomainAdSegments(parsed.segments);
+    adsDuration = sumSegmentDuration(parsed.segments, adIndices);
+
+    if (adIndices.size === 0) {
+      return {
+        filtered: content,
+        adsRemoved: 0,
+        adsDuration: 0,
+        changed: false,
+      };
+    }
+  }
 
   const linesToRemove = new Set<number>();
   adIndices.forEach((idx) => {
