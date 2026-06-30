@@ -58,6 +58,36 @@ function buildProbeFailure(input: {
   };
 }
 
+function buildProbePartial(input: {
+  message: string;
+  failureKind:
+    | 'empty'
+    | 'timeout'
+    | 'resolver'
+    | 'manifest'
+    | 'fragment'
+    | 'media'
+    | 'network'
+    | 'unsupported'
+    | 'unknown';
+  mediaType?: 'hls' | 'file' | 'page' | 'unknown';
+  resolvedUrl?: string;
+}) {
+  return {
+    quality: '未知',
+    loadSpeed: '未知',
+    pingTime: 0,
+    hasError: false,
+    status: 'partial',
+    message: input.message,
+    playable: false,
+    failureKind: input.failureKind,
+    testedAt: Date.now(),
+    resolvedUrl: input.resolvedUrl,
+    mediaType: input.mediaType || 'unknown',
+  };
+}
+
 function resolveInternalPlaybackUrl(
   request: NextRequest,
   rawUrl: string,
@@ -137,8 +167,9 @@ export async function GET(request: NextRequest) {
   if (!playbackUrl || resolution.mediaType === 'page') {
     return NextResponse.json(
       {
-        ...buildProbeFailure({
-          message: resolution.error || '未解析到可播放媒体地址',
+        ...buildProbePartial({
+          message:
+            resolution.error || '播放页已连通，等待播放时进一步解析媒体地址',
           failureKind: 'resolver',
           mediaType: resolution.mediaType,
           resolvedUrl: playbackUrl || resolution.resolvedUrl,

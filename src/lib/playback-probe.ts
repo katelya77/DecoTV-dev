@@ -683,10 +683,12 @@ export async function probePlaybackUrl(
       mediaType: 'unknown',
     });
   } catch (error) {
+    const isTimeout = isAbortLikeError(error);
     return buildResult({
-      status: 'failed',
-      message: isAbortLikeError(error) ? '连接超时' : '播放源预检失败',
-      failureKind: isAbortLikeError(error) ? 'timeout' : 'network',
+      status: isTimeout ? 'partial' : 'failed',
+      message: isTimeout ? '预检超时，播放时继续尝试' : '播放源预检失败',
+      playable: false,
+      failureKind: isTimeout ? 'timeout' : 'network',
       resolvedUrl: playbackUrl,
       mediaType: options.mediaType || 'unknown',
     });

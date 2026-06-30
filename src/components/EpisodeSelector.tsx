@@ -413,7 +413,22 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         (item) =>
           item.videoInfo &&
           !item.videoInfo.hasError &&
+          item.videoInfo.failureKind !== 'resolver' &&
+          item.videoInfo.failureKind !== 'timeout' &&
           (item.videoInfo.status === 'partial' || item.videoInfo.pingTime > 0),
+      ).length,
+    [sourceItems],
+  );
+
+  const pendingSourceCount = useMemo(
+    () =>
+      sourceItems.filter(
+        (item) =>
+          item.videoInfo &&
+          !item.videoInfo.hasError &&
+          item.videoInfo.status === 'partial' &&
+          (item.videoInfo.failureKind === 'resolver' ||
+            item.videoInfo.failureKind === 'timeout'),
       ).length,
     [sourceItems],
   );
@@ -449,13 +464,19 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             : '';
         return `最佳播放源 ${startupText}${speedText} · ${bestPlaybackItem.source.source_name}`;
       }
-      return failedSourceCount > 0
-        ? connectedSourceCount > 0
+      if (connectedSourceCount > 0) {
+        return failedSourceCount > 0
           ? `已连通 ${connectedSourceCount} 个源，部分源未完成分片测速`
-          : '测速完成，暂无可播放媒体样本'
-        : connectedSourceCount > 0
-          ? `已连通 ${connectedSourceCount} 个源，等待分片测速`
-          : '等待首播数据';
+          : `已连通 ${connectedSourceCount} 个源，等待分片测速`;
+      }
+
+      if (pendingSourceCount > 0) {
+        return `${pendingSourceCount} 个源待播放验证`;
+      }
+
+      return failedSourceCount > 0
+        ? '测速完成，暂无可播放媒体样本'
+        : '等待首播数据';
     }
 
     if (
@@ -486,6 +507,22 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         label: '检测失败',
         className: 'text-red-600 dark:text-red-400',
       };
+    }
+
+    if (videoInfo.status === 'partial') {
+      if (videoInfo.failureKind === 'resolver') {
+        return {
+          label: '待解析',
+          className: 'text-amber-600 dark:text-amber-300',
+        };
+      }
+
+      if (videoInfo.failureKind === 'timeout') {
+        return {
+          label: '待验证',
+          className: 'text-amber-600 dark:text-amber-300',
+        };
+      }
     }
 
     if (videoInfo.quality && videoInfo.quality !== '未知') {
@@ -906,6 +943,16 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                                           )} font-medium text-xs`}
                                         >
                                           速度 {videoInfo.loadSpeed}
+                                        </div>
+                                      ) : videoInfo.message &&
+                                        (videoInfo.failureKind === 'resolver' ||
+                                          videoInfo.failureKind === 'timeout' ||
+                                          !videoInfo.pingTime) ? (
+                                        <div
+                                          className='truncate text-amber-600 dark:text-amber-300 font-medium text-xs'
+                                          title={videoInfo.message}
+                                        >
+                                          {videoInfo.message}
                                         </div>
                                       ) : (
                                         <div className='text-sky-600 dark:text-sky-300 font-medium text-xs'>

@@ -99,6 +99,24 @@ describe('playback url resolver', () => {
     ).toBe('https://cdn.example.com/movie/index.m3u8?token=1');
   });
 
+  it('extracts HLS urls assigned after player objects are created', () => {
+    const html =
+      '<script>MacPlayer.PlayUrl = "https://cdn.example.com/movie/index.m3u8?token=1";</script>';
+
+    expect(
+      extractPlaybackUrlFromHtml(html, 'https://site.example/share/abc'),
+    ).toBe('https://cdn.example.com/movie/index.m3u8?token=1');
+  });
+
+  it('extracts encoded HLS urls from decoder calls', () => {
+    const html =
+      '<script>var play = decodeURIComponent("https%3A%2F%2Fcdn.example.com%2Fmovie%2Findex.m3u8%3Ftoken%3D1");</script>';
+
+    expect(
+      extractPlaybackUrlFromHtml(html, 'https://site.example/share/abc'),
+    ).toBe('https://cdn.example.com/movie/index.m3u8?token=1');
+  });
+
   it('resolves HLS urls from a nested iframe player page', async () => {
     fetchWithValidatedRedirects
       .mockResolvedValueOnce(

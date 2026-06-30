@@ -34,6 +34,21 @@ export function isVerifiedPlaybackResult(
   );
 }
 
+export function isPlayableFallbackResult(
+  result: VideoSourceTestResult | undefined,
+): boolean {
+  return Boolean(
+    result &&
+    !result.hasError &&
+    result.mediaType !== 'page' &&
+    result.failureKind !== 'resolver' &&
+    (isVerifiedPlaybackResult(result) ||
+      result.status === 'partial' ||
+      result.playable ||
+      (result.pingTime || 0) > 0),
+  );
+}
+
 export function getPlaybackEvidenceTier(
   result: VideoSourceTestResult | undefined,
 ): number {

@@ -175,7 +175,6 @@ async function measureNativeVideoSource(
     const video = document.createElement('video');
     video.muted = true;
     video.preload = 'metadata';
-    video.crossOrigin = 'anonymous';
 
     let finished = false;
     let pingTime = 0;
@@ -293,7 +292,6 @@ export async function getVideoResolutionFromM3u8(
     const video = document.createElement('video');
     video.muted = true;
     video.preload = 'metadata';
-    video.crossOrigin = 'anonymous';
 
     const hls = new Hls({
       autoStartLoad: true,

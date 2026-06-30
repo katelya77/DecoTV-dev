@@ -303,6 +303,8 @@ export function extractPlaybackCandidatesFromHtml(
   const patterns: RegExp[] = [
     /\b(?:const|let|var)\s+(?:url|playUrl|playurl|play_url|videoUrl|video|m3u8|src|file|source)\s*=\s*(['"`])([^'"`]+)\1/gi,
     /["']?(?:url|play_url|playUrl|playurl|videoUrl|video|m3u8|src|file|source)["']?\s*:\s*(['"`])([^'"`]+)\1/gi,
+    /\.(?:url|playUrl|playurl|play_url|videoUrl|video|m3u8|src|file|source)\s*=\s*(['"`])([^'"`]+)\1/gi,
+    /\b(?:atob|decodeURIComponent|unescape)\(\s*(['"`])([^'"`]+)\1\s*\)/gi,
     /\bhls\.loadSource\(\s*(['"`])([^'"`]+)\1\s*\)/gi,
     /<(?:source|video|iframe|embed)\b[^>]+src=(['"])([^'"]+)\1/gi,
     /<(?:source|video|meta)\b[^>]+(?:data-src|content)=(['"])([^'"]+)\1/gi,
