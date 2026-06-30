@@ -24,6 +24,34 @@ export interface PlaybackUrlResolution {
   error?: string;
 }
 
+function toChineseResolveError(
+  message: string | undefined,
+): string | undefined {
+  if (!message) return undefined;
+  if (/no media url/i.test(message)) {
+    return '播放页中未找到可播放媒体地址';
+  }
+  if (/too large/i.test(message)) {
+    return '播放页内容过大，无法解析';
+  }
+  if (/empty playback url/i.test(message)) {
+    return '播放地址为空';
+  }
+  if (/invalid playback url|invalid url/i.test(message)) {
+    return '播放地址无效';
+  }
+  if (/timeout|timed out|abort/i.test(message)) {
+    return '解析播放地址超时';
+  }
+  if (/fetch failed|network/i.test(message)) {
+    return '解析播放地址网络请求失败';
+  }
+  if (/unable to resolve/i.test(message)) {
+    return '无法解析播放地址';
+  }
+  return message;
+}
+
 interface CacheEntry {
   expiresAt: number;
   value: PlaybackUrlResolution;
@@ -268,7 +296,7 @@ export async function resolveExternalPlaybackUrl(
       resolvedUrl: '',
       mediaType: 'unknown',
       resolved: false,
-      error: 'Empty playback url',
+      error: '播放地址为空',
     };
   }
 
@@ -283,7 +311,10 @@ export async function resolveExternalPlaybackUrl(
       resolvedUrl: originalUrl,
       mediaType: inferMediaTypeFromUrl(originalUrl),
       resolved: false,
-      error: error instanceof Error ? error.message : 'Invalid playback url',
+      error:
+        error instanceof Error
+          ? toChineseResolveError(error.message)
+          : '播放地址无效',
     };
   }
 
@@ -443,9 +474,7 @@ export async function resolveExternalPlaybackUrl(
       resolved: finalUrl !== originalUrl,
       contentType,
       error:
-        responseType === 'page'
-          ? 'No media url found in playback page'
-          : undefined,
+        responseType === 'page' ? '播放页中未找到可播放媒体地址' : undefined,
     } satisfies PlaybackUrlResolution;
     setCached(originalUrl, fallback);
     return fallback;
@@ -457,8 +486,8 @@ export async function resolveExternalPlaybackUrl(
       resolved: false,
       error:
         error instanceof Error
-          ? error.message
-          : 'Unable to resolve playback url',
+          ? toChineseResolveError(error.message)
+          : '无法解析播放地址',
     };
   }
 }

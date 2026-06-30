@@ -64,10 +64,7 @@ export function formatVideoLoadSpeed(speedKBps?: number): string {
   if (!speedKBps || !Number.isFinite(speedKBps) || speedKBps <= 0) {
     return '未知';
   }
-  if (speedKBps >= 1024) {
-    return `${(speedKBps / 1024).toFixed(1)} MB/s`;
-  }
-  return `${speedKBps.toFixed(1)} KB/s`;
+  return `${(speedKBps / 1024).toFixed(2)} MB/s`;
 }
 
 function getStatsTime(stats: any, key: 'start' | 'first' | 'end'): number {
@@ -394,7 +391,7 @@ export async function getVideoResolutionFromM3u8(
     }, timeoutMs);
 
     const maybeFinish = () => {
-      if (speedKBps > 0 && (playable || quality !== '未知')) {
+      if (speedKBps > 0) {
         finish('ok', '分片测速完成');
       }
     };

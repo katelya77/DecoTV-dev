@@ -99,4 +99,17 @@ describe('playback url resolver', () => {
     );
     expect(result.referer).toBe('https://site.example/player/abc');
   });
+
+  it('returns a Chinese message when a playback page has no media url', async () => {
+    fetchWithValidatedRedirects.mockResolvedValueOnce(
+      textResponse('<html><body>empty player</body></html>'),
+    );
+
+    const result = await resolveExternalPlaybackUrl(
+      'https://site.example/share/empty',
+    );
+
+    expect(result.mediaType).toBe('page');
+    expect(result.error).toBe('播放页中未找到可播放媒体地址');
+  });
 });

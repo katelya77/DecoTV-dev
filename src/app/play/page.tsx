@@ -42,6 +42,7 @@ import {
 import { isLikelyHlsUrl } from '@/lib/player/hls-url';
 import {
   comparePlaybackMetrics,
+  hasMeasuredMediaThroughput,
   isVerifiedPlaybackResult,
 } from '@/lib/player/source-ranking';
 import { SearchResult } from '@/lib/types';
@@ -148,10 +149,12 @@ interface SourceProbeProgress {
   total: number;
 }
 
-const SOURCE_PROBE_AUTO_CONCURRENCY = 2;
+const SOURCE_PROBE_AUTO_CONCURRENCY = 3;
 const SOURCE_PROBE_MANUAL_CONCURRENCY = 2;
-const SOURCE_PROBE_TIMEOUT_MS = 8000;
+const SOURCE_PROBE_TIMEOUT_MS = 5000;
 const SOURCE_PROBE_MANUAL_TIMEOUT_MS = 10000;
+const INITIAL_PREFER_PROBE_TIMEOUT_MS = 4000;
+const INITIAL_PREFER_MAX_WAIT_MS = 4500;
 const PLAYBACK_STARTUP_FAILOVER_MS = 12000;
 
 function getSourceProbeKey(source: Pick<SearchResult, 'source' | 'id'>) {
@@ -178,6 +181,22 @@ function inferFailureKind(
   return result.hasError ? 'unknown' : undefined;
 }
 
+function normalizePlaybackErrorMessage(message: string | undefined): string {
+  const raw = (message || '').trim();
+  if (!raw) return '检测失败';
+  if (/no media url/i.test(raw)) return '播放页中未找到可播放媒体地址';
+  if (/timeout|timed out|abort/i.test(raw)) return '连接超时';
+  if (/failed to fetch|fetch failed|network/i.test(raw)) {
+    return '网络请求失败';
+  }
+  if (/manifest/i.test(raw)) return '播放清单不可访问或格式异常';
+  if (/frag/i.test(raw)) return '媒体分片加载失败，源不稳定';
+  if (/media/i.test(raw)) return '媒体格式不兼容或解码失败';
+  if (/resolver|resolve/i.test(raw)) return '播放地址解析失败';
+  if (/invalid/i.test(raw)) return '播放地址无效';
+  return raw;
+}
+
 function buildSourceProbeFailure(
   message: string,
   failureKind: VideoSourceFailureKind,
@@ -189,7 +208,7 @@ function buildSourceProbeFailure(
     pingTime: 0,
     hasError: true,
     status: 'failed',
-    message,
+    message: normalizePlaybackErrorMessage(message),
     failureKind,
     testedAt: Date.now(),
     ...extra,
@@ -885,7 +904,7 @@ function PlayPageClient() {
           originalUrl: '',
           mediaType: 'unknown',
           resolved: false,
-          error: 'Empty playback url',
+          error: '播放地址为空',
         };
       }
 
@@ -951,7 +970,7 @@ function PlayPageClient() {
           signal,
         });
         if (!response.ok) {
-          throw new Error(`resolve failed: ${response.status}`);
+          throw new Error(`播放地址解析失败：${response.status}`);
         }
 
         const payload = (await response.json()) as PlaybackResolveResponse;
@@ -975,7 +994,7 @@ function PlayPageClient() {
           resolvedUrl: resolvedUrl || payload.resolvedUrl || trimmedUrl,
           originalUrl: payload.originalUrl || trimmedUrl,
           mediaType: payload.mediaType || 'unknown',
-          error: payload.error || 'No playable media url resolved',
+          error: payload.error || '未解析到可播放媒体地址',
         };
       } catch (error) {
         if (!isAbortError(error)) {
@@ -990,7 +1009,7 @@ function PlayPageClient() {
         originalUrl: trimmedUrl,
         mediaType: isLikelyHlsUrl(trimmedUrl) ? 'hls' : 'unknown',
         resolved: false,
-        error: 'Unable to resolve playback url',
+        error: '无法解析播放地址',
       };
     },
     [],
@@ -1647,10 +1666,34 @@ function PlayPageClient() {
   }, []);
 
   const mergeSourceProbeResult = useCallback(
-    (source: SearchResult, result: VideoSourceTestResult) => {
+    (
+      source: SearchResult,
+      result: VideoSourceTestResult,
+      options: { force?: boolean } = {},
+    ) => {
       const sourceKey = getSourceProbeKey(source);
       setSourceVideoInfoMap((prev) => {
         const next = new Map(prev);
+        const previous = next.get(sourceKey);
+        if (
+          !options.force &&
+          previous &&
+          isVerifiedPlaybackResult(previous) &&
+          result.hasError
+        ) {
+          sourceVideoInfoMapRef.current = next;
+          return next;
+        }
+        if (
+          !options.force &&
+          previous &&
+          hasMeasuredMediaThroughput(previous) &&
+          !hasMeasuredMediaThroughput(result) &&
+          result.status === 'partial'
+        ) {
+          sourceVideoInfoMapRef.current = next;
+          return next;
+        }
         next.set(sourceKey, result);
         sourceVideoInfoMapRef.current = next;
         return next;
@@ -1680,6 +1723,15 @@ function PlayPageClient() {
       const cached = sourceVideoInfoMapRef.current.get(sourceKey);
       if (!force && cached) return cached;
 
+      const probeController = new AbortController();
+      const abortFromParent = () => probeController.abort();
+      if (signal?.aborted) {
+        probeController.abort();
+      } else {
+        signal?.addEventListener('abort', abortFromParent, { once: true });
+      }
+      const probeTimer = setTimeout(() => probeController.abort(), timeoutMs);
+
       if (track) {
         setSourceTestingKeys((prev) => {
           const next = new Set(prev);
@@ -1692,16 +1744,18 @@ function PlayPageClient() {
         const episodeUrl = getSourceEpisodeUrl(source);
         if (!episodeUrl) {
           const result = buildSourceProbeFailure('没有可用播放地址', 'empty');
-          mergeSourceProbeResult(source, result);
+          mergeSourceProbeResult(source, result, { force });
           return result;
         }
 
         const resolution = await resolvePlaybackSource(
           episodeUrl,
           source.source,
-          signal,
+          probeController.signal,
         );
-        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+        if (probeController.signal.aborted) {
+          throw new DOMException('Aborted', 'AbortError');
+        }
 
         const playbackUrl = resolution.playbackUrl || resolution.resolvedUrl;
         const mediaType = (resolution.mediaType ||
@@ -1715,15 +1769,17 @@ function PlayPageClient() {
               mediaType,
             },
           );
-          mergeSourceProbeResult(source, result);
+          mergeSourceProbeResult(source, result, { force });
           return result;
         }
 
         const info = await getVideoResolutionFromM3u8(playbackUrl, {
           timeoutMs,
-          signal,
+          signal: probeController.signal,
         });
-        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+        if (probeController.signal.aborted) {
+          throw new DOMException('Aborted', 'AbortError');
+        }
 
         const result: VideoSourceTestResult = {
           ...info,
@@ -1731,20 +1787,25 @@ function PlayPageClient() {
           mediaType,
           failureKind: inferFailureKind(info),
         };
-        mergeSourceProbeResult(source, result);
+        mergeSourceProbeResult(source, result, { force });
         return result;
       } catch (error) {
         if (isAbortError(error) || signal?.aborted) {
-          throw error;
+          if (signal?.aborted) throw error;
+          const result = buildSourceProbeFailure('连接超时', 'timeout');
+          mergeSourceProbeResult(source, result, { force });
+          return result;
         }
 
         const result = buildSourceProbeFailure(
           error instanceof Error ? error.message : '检测失败',
           'unknown',
         );
-        mergeSourceProbeResult(source, result);
+        mergeSourceProbeResult(source, result, { force });
         return result;
       } finally {
+        clearTimeout(probeTimer);
+        signal?.removeEventListener('abort', abortFromParent);
         if (track) {
           setSourceTestingKeys((prev) => {
             const next = new Set(prev);
@@ -1862,8 +1923,8 @@ function PlayPageClient() {
       sources,
       currentEpisodeIndexRef.current,
     );
-    const autoProbeTimeoutMs = 6500;
-    const acceptableStartupMs = 4500;
+    const autoProbeTimeoutMs = INITIAL_PREFER_PROBE_TIMEOUT_MS;
+    const acceptableStartupMs = INITIAL_PREFER_PROBE_TIMEOUT_MS;
 
     // 自动优选只需要尽快找到经过媒体分片验证的可播源，避免首播前阻塞在全量测速。
     const concurrency = Math.min(3, sources.length);
@@ -1874,6 +1935,9 @@ function PlayPageClient() {
     }> = [];
     let nextSourceIndex = 0;
     let hasAcceptableResult = false;
+    const deadlineTimer = setTimeout(() => {
+      controller.abort();
+    }, INITIAL_PREFER_MAX_WAIT_MS);
 
     const probeSource = async (source: SearchResult) => {
       const testResult = await probePlaybackSource(source, {
@@ -1886,7 +1950,7 @@ function PlayPageClient() {
     };
 
     const runProbeWorker = async () => {
-      while (!hasAcceptableResult) {
+      while (!hasAcceptableResult && !controller.signal.aborted) {
         const sourceIndex = nextSourceIndex++;
         if (sourceIndex >= sources.length) return;
 
@@ -1915,6 +1979,7 @@ function PlayPageClient() {
     await Promise.all(
       Array.from({ length: concurrency }, () => runProbeWorker()),
     );
+    clearTimeout(deadlineTimer);
 
     // 只有取得媒体分片或明确进入可播状态的数据，才具备自动选中的证据。
     const verifiedResults = allResults.filter((result) =>
@@ -3000,6 +3065,7 @@ function PlayPageClient() {
             resolvedUrl: videoUrl,
             mediaType: isLikelyHlsUrl(videoUrl) ? 'hls' : 'unknown',
           }),
+          { force: true },
         );
       }
 

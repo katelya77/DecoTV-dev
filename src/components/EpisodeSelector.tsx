@@ -11,6 +11,7 @@ import React, {
 import {
   comparePlaybackMetrics,
   getPlaybackEvidenceTier,
+  hasMeasuredMediaThroughput,
   isVerifiedPlaybackResult,
 } from '@/lib/player/source-ranking';
 import { SearchResult } from '@/lib/types';
@@ -79,9 +80,7 @@ function compareLatencySourceOrder(a: SourceSortItem, b: SourceSortItem) {
 
 function formatResponseTime(ms: number) {
   if (!Number.isFinite(ms) || ms <= 0) return '未测得';
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  if (ms < 10000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${Math.round(ms / 1000)}s`;
+  return `${Math.round(ms)}ms`;
 }
 
 function getLatencyTextClassName(pingTime: number) {
@@ -429,17 +428,15 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
       if (bestPlaybackItem?.videoInfo) {
         const startupText =
           typeof bestPlaybackItem.videoInfo.startupTimeMs === 'number'
-            ? `首片 ${formatResponseTime(
+            ? `延迟 ${formatResponseTime(
                 bestPlaybackItem.videoInfo.startupTimeMs,
               )}`
-            : `仅响应 ${formatResponseTime(
-                bestPlaybackItem.videoInfo.pingTime,
-              )}`;
+            : `响应 ${formatResponseTime(bestPlaybackItem.videoInfo.pingTime)}`;
         const speedText =
           bestPlaybackItem.videoInfo.loadSpeed !== '未知'
             ? ` · 速度 ${bestPlaybackItem.videoInfo.loadSpeed}`
             : '';
-        return `最佳首播 ${startupText}${speedText} · ${bestPlaybackItem.source.source_name}`;
+        return `最佳播放源 ${startupText}${speedText} · ${bestPlaybackItem.source.source_name}`;
       }
       return failedSourceCount > 0
         ? '测速完成，暂无可播放媒体样本'
@@ -486,6 +483,13 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           : isHigh
             ? 'text-green-600 dark:text-green-400'
             : 'text-yellow-600 dark:text-yellow-400',
+      };
+    }
+
+    if (hasMeasuredMediaThroughput(videoInfo)) {
+      return {
+        label: '可播',
+        className: 'text-green-600 dark:text-green-400',
       };
     }
 
@@ -863,14 +867,14 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                                             videoInfo.startupTimeMs,
                                           )} font-medium text-xs`}
                                         >
-                                          首片{' '}
+                                          延迟{' '}
                                           {formatResponseTime(
                                             videoInfo.startupTimeMs,
                                           )}
                                         </div>
                                       ) : videoInfo.pingTime > 0 ? (
                                         <div className='text-orange-600 dark:text-orange-400 font-medium text-xs'>
-                                          仅响应{' '}
+                                          响应{' '}
                                           {formatResponseTime(
                                             videoInfo.pingTime,
                                           )}
