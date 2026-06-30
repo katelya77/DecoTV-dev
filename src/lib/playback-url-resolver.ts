@@ -111,8 +111,61 @@ function decodeHtmlEntities(value: string): string {
 function normalizeEscapedUrl(value: string): string {
   return decodeHtmlEntities(stripWrappingQuotes(value))
     .replace(/\\\//g, '/')
+    .replace(/\\x([0-9a-f]{2})/gi, (_match, hex: string) =>
+      String.fromCharCode(parseInt(hex, 16)),
+    )
+    .replace(/\\u([0-9a-f]{4})/gi, (_match, hex: string) =>
+      String.fromCharCode(parseInt(hex, 16)),
+    )
     .replace(/\\u0026/gi, '&')
     .trim();
+}
+
+function decodeURIComponentSafely(value: string): string | null {
+  try {
+    const decoded = decodeURIComponent(value);
+    return decoded !== value ? decoded : null;
+  } catch {
+    return null;
+  }
+}
+
+function decodeBase64Candidate(value: string): string | null {
+  const normalized = value.trim().replace(/-/g, '+').replace(/_/g, '/');
+  if (!normalized || normalized.length < 12) return null;
+  if (!/^[a-z0-9+/]+={0,2}$/i.test(normalized)) return null;
+
+  try {
+    const decoded = Buffer.from(normalized, 'base64').toString('utf8').trim();
+    if (/^(?:https?:)?\/\//i.test(decoded) || decoded.startsWith('/')) {
+      return decoded;
+    }
+  } catch {
+    // ignore non-base64 values
+  }
+
+  return null;
+}
+
+function expandCandidateVariants(value: string): string[] {
+  const variants: string[] = [];
+  const seen = new Set<string>();
+  const queue = [normalizeEscapedUrl(value)];
+
+  while (queue.length > 0) {
+    const current = queue.shift()?.trim();
+    if (!current || seen.has(current)) continue;
+    seen.add(current);
+    variants.push(current);
+
+    const uriDecoded = decodeURIComponentSafely(current);
+    if (uriDecoded && !seen.has(uriDecoded)) queue.push(uriDecoded);
+
+    const base64Decoded = decodeBase64Candidate(current);
+    if (base64Decoded && !seen.has(base64Decoded)) queue.push(base64Decoded);
+  }
+
+  return variants;
 }
 
 function isUnsupportedMediaCandidate(value: string): boolean {
@@ -171,15 +224,58 @@ function inferMediaTypeFromContentType(
   return 'unknown';
 }
 
-function resolveCandidate(baseUrl: string, candidate: string): string | null {
-  const normalized = normalizeEscapedUrl(candidate);
-  if (isUnsupportedMediaCandidate(normalized)) return null;
+function resolveCandidateVariants(
+  baseUrl: string,
+  candidate: string,
+): string[] {
+  const resolvedCandidates: string[] = [];
+  const seenValues = new Set<string>();
+  const queue = expandCandidateVariants(candidate);
+  const mediaParamNames = [
+    'url',
+    'play',
+    'playurl',
+    'play_url',
+    'video',
+    'videoUrl',
+    'vurl',
+    'src',
+    'file',
+    'm3u8',
+  ];
 
-  try {
-    return new URL(normalized, baseUrl).toString();
-  } catch {
-    return null;
+  while (queue.length > 0) {
+    const normalized = queue.shift()?.trim();
+    if (!normalized || seenValues.has(normalized)) continue;
+    seenValues.add(normalized);
+    if (isUnsupportedMediaCandidate(normalized)) continue;
+
+    let resolved: string;
+    try {
+      resolved = new URL(normalized, baseUrl).toString();
+    } catch {
+      continue;
+    }
+
+    if (!resolvedCandidates.includes(resolved)) {
+      resolvedCandidates.push(resolved);
+    }
+
+    try {
+      const parsed = new URL(resolved);
+      for (const name of mediaParamNames) {
+        const paramValue = parsed.searchParams.get(name);
+        if (!paramValue) continue;
+        for (const variant of expandCandidateVariants(paramValue)) {
+          if (!seenValues.has(variant)) queue.push(variant);
+        }
+      }
+    } catch {
+      // ignore invalid candidate URLs
+    }
   }
+
+  return resolvedCandidates;
 }
 
 function pushCandidate(
@@ -188,11 +284,12 @@ function pushCandidate(
   candidate: string | undefined,
 ) {
   if (!candidate) return;
-  const resolved = resolveCandidate(baseUrl, candidate);
-  if (!resolved) return;
-  if (!/^https?:\/\//i.test(resolved)) return;
-  if (!candidates.includes(resolved)) {
-    candidates.push(resolved);
+  const resolvedCandidates = resolveCandidateVariants(baseUrl, candidate);
+  for (const resolved of resolvedCandidates) {
+    if (!/^https?:\/\//i.test(resolved)) continue;
+    if (!candidates.includes(resolved)) {
+      candidates.push(resolved);
+    }
   }
 }
 
@@ -204,10 +301,11 @@ export function extractPlaybackCandidatesFromHtml(
 
   const candidates: string[] = [];
   const patterns: RegExp[] = [
-    /\b(?:const|let|var)\s+(?:url|playUrl|videoUrl|m3u8|src)\s*=\s*(['"`])([^'"`]+)\1/gi,
-    /["']?(?:url|play_url|playUrl|videoUrl|m3u8)["']?\s*:\s*(['"`])([^'"`]+)\1/gi,
+    /\b(?:const|let|var)\s+(?:url|playUrl|playurl|play_url|videoUrl|video|m3u8|src|file|source)\s*=\s*(['"`])([^'"`]+)\1/gi,
+    /["']?(?:url|play_url|playUrl|playurl|videoUrl|video|m3u8|src|file|source)["']?\s*:\s*(['"`])([^'"`]+)\1/gi,
     /\bhls\.loadSource\(\s*(['"`])([^'"`]+)\1\s*\)/gi,
-    /<(?:source|video|iframe)\b[^>]+src=(['"])([^'"]+)\1/gi,
+    /<(?:source|video|iframe|embed)\b[^>]+src=(['"])([^'"]+)\1/gi,
+    /<(?:source|video|meta)\b[^>]+(?:data-src|content)=(['"])([^'"]+)\1/gi,
   ];
 
   for (const pattern of patterns) {
@@ -218,6 +316,12 @@ export function extractPlaybackCandidatesFromHtml(
 
   for (const match of html.matchAll(
     /(?:(?:https?:)?\/\/|\/)[^'"<>\s]+?\.m3u8(?:\?[^'"<>\s]*)?/gi,
+  )) {
+    pushCandidate(candidates, pageUrl, match[0]);
+  }
+
+  for (const match of html.matchAll(
+    /(?:https?%3a%2f%2f|%2f)[^'"<>\s]+?\.m3u8(?:%3f[^'"<>\s]*)?/gi,
   )) {
     pushCandidate(candidates, pageUrl, match[0]);
   }

@@ -48,7 +48,6 @@ import {
 import { SearchResult } from '@/lib/types';
 import { generateCacheKey, globalCache } from '@/lib/unified-cache';
 import {
-  getVideoResolutionFromM3u8,
   type PlaybackMediaType,
   type VideoSourceFailureKind,
   type VideoSourceTestResult,
@@ -135,6 +134,14 @@ interface PlaybackResolveResponse {
   resolvedUrl?: string;
   originalUrl?: string;
   mediaType?: 'hls' | 'file' | 'page' | 'unknown';
+  resolved?: boolean;
+  proxied?: boolean;
+  error?: string;
+}
+
+interface PlaybackProbeResponse extends VideoSourceTestResult {
+  playbackUrl?: string;
+  originalUrl?: string;
   resolved?: boolean;
   proxied?: boolean;
   error?: string;
@@ -1027,6 +1034,46 @@ function PlayPageClient() {
     [resolvePlaybackSource],
   );
 
+  const probePlaybackSourceOnServer = useCallback(
+    async (
+      rawUrl: string,
+      sourceKey: string,
+      timeoutMs: number,
+      signal?: AbortSignal,
+    ): Promise<PlaybackProbeResponse> => {
+      const params = new URLSearchParams();
+      params.set('url', rawUrl);
+      params.set('timeoutMs', String(timeoutMs));
+      if (sourceKey) params.set('source', sourceKey);
+
+      try {
+        if (typeof window !== 'undefined') {
+          const currentUrl = new URL(window.location.href);
+          const adfilter = currentUrl.searchParams.get('adfilter');
+          if (adfilter) params.set('adfilter', adfilter);
+        }
+      } catch {
+        // ignore
+      }
+
+      const response = await fetch(`/api/playback/probe?${params}`, {
+        cache: 'no-store',
+        signal,
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | PlaybackProbeResponse
+        | { error?: string }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.error || `播放源预检失败：${response.status}`);
+      }
+
+      return payload as PlaybackProbeResponse;
+    },
+    [],
+  );
+
   const isPrivateEmbyLikeSource =
     isPrivateLibrarySource(currentSource) &&
     (detail?.connector_type === 'emby' ||
@@ -1748,24 +1795,35 @@ function PlayPageClient() {
           return result;
         }
 
-        const resolution = await resolvePlaybackSource(
+        const serverProbe = await probePlaybackSourceOnServer(
           episodeUrl,
           source.source,
+          timeoutMs,
           probeController.signal,
         );
         if (probeController.signal.aborted) {
           throw new DOMException('Aborted', 'AbortError');
         }
 
-        const playbackUrl = resolution.playbackUrl || resolution.resolvedUrl;
-        const mediaType = (resolution.mediaType ||
+        const playbackUrl =
+          serverProbe.playbackUrl || serverProbe.resolvedUrl || '';
+        const mediaType = (serverProbe.mediaType ||
           'unknown') as PlaybackMediaType;
+        if (playbackUrl && mediaType !== 'page') {
+          playbackUrlCacheRef.current.set(
+            `${source.source}|${episodeUrl}`,
+            playbackUrl,
+          );
+        }
+
         if (!playbackUrl || mediaType === 'page') {
           const result = buildSourceProbeFailure(
-            resolution.error || '未解析到可播放媒体地址',
+            serverProbe.message ||
+              serverProbe.error ||
+              '未解析到可播放媒体地址',
             'resolver',
             {
-              resolvedUrl: playbackUrl || resolution.resolvedUrl,
+              resolvedUrl: playbackUrl || serverProbe.resolvedUrl,
               mediaType,
             },
           );
@@ -1773,19 +1831,11 @@ function PlayPageClient() {
           return result;
         }
 
-        const info = await getVideoResolutionFromM3u8(playbackUrl, {
-          timeoutMs,
-          signal: probeController.signal,
-        });
-        if (probeController.signal.aborted) {
-          throw new DOMException('Aborted', 'AbortError');
-        }
-
         const result: VideoSourceTestResult = {
-          ...info,
+          ...serverProbe,
           resolvedUrl: playbackUrl,
           mediaType,
-          failureKind: inferFailureKind(info),
+          failureKind: inferFailureKind(serverProbe),
         };
         mergeSourceProbeResult(source, result, { force });
         return result;
@@ -1815,7 +1865,7 @@ function PlayPageClient() {
         }
       }
     },
-    [getSourceEpisodeUrl, mergeSourceProbeResult, resolvePlaybackSource],
+    [getSourceEpisodeUrl, mergeSourceProbeResult, probePlaybackSourceOnServer],
   );
 
   const runSourceProbeQueue = useCallback(

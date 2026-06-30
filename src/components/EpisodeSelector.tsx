@@ -407,6 +407,17 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     [sourceItems],
   );
 
+  const connectedSourceCount = useMemo(
+    () =>
+      sourceItems.filter(
+        (item) =>
+          item.videoInfo &&
+          !item.videoInfo.hasError &&
+          (item.videoInfo.status === 'partial' || item.videoInfo.pingTime > 0),
+      ).length,
+    [sourceItems],
+  );
+
   const displaySourceItems = useMemo(() => {
     const items = [...sourceItems];
     items.sort(
@@ -439,8 +450,12 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         return `最佳播放源 ${startupText}${speedText} · ${bestPlaybackItem.source.source_name}`;
       }
       return failedSourceCount > 0
-        ? '测速完成，暂无可播放媒体样本'
-        : '等待首播数据';
+        ? connectedSourceCount > 0
+          ? `已连通 ${connectedSourceCount} 个源，部分源未完成分片测速`
+          : '测速完成，暂无可播放媒体样本'
+        : connectedSourceCount > 0
+          ? `已连通 ${connectedSourceCount} 个源，等待分片测速`
+          : '等待首播数据';
     }
 
     if (
@@ -495,7 +510,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
     if (videoInfo.status === 'partial' || videoInfo.pingTime > 0) {
       return {
-        label: '仅连通',
+        label: '已连通',
         className: 'text-sky-600 dark:text-sky-300',
       };
     }
@@ -873,7 +888,11 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                                           )}
                                         </div>
                                       ) : videoInfo.pingTime > 0 ? (
-                                        <div className='text-orange-600 dark:text-orange-400 font-medium text-xs'>
+                                        <div
+                                          className={`${getLatencyTextClassName(
+                                            videoInfo.pingTime,
+                                          )} font-medium text-xs`}
+                                        >
                                           响应{' '}
                                           {formatResponseTime(
                                             videoInfo.pingTime,
@@ -889,8 +908,8 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                                           速度 {videoInfo.loadSpeed}
                                         </div>
                                       ) : (
-                                        <div className='text-gray-500 dark:text-gray-400 font-medium text-xs'>
-                                          未取得媒体分片
+                                        <div className='text-sky-600 dark:text-sky-300 font-medium text-xs'>
+                                          已连通，待分片测速
                                         </div>
                                       )}
                                     </div>

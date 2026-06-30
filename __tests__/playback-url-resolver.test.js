@@ -78,6 +78,27 @@ describe('playback url resolver', () => {
     ).toBe('https://cdn.example.com/movie/index.m3u8?token=1&v=2');
   });
 
+  it('extracts HLS urls from encoded player query params', () => {
+    const html =
+      '<iframe src="/player/?url=https%3A%2F%2Fcdn.example.com%2Fmovie%2Findex.m3u8%3Ftoken%3D1"></iframe>';
+
+    expect(
+      extractPlaybackUrlFromHtml(html, 'https://site.example/share/abc'),
+    ).toBe('https://cdn.example.com/movie/index.m3u8?token=1');
+  });
+
+  it('extracts base64 encoded HLS urls from MacCMS player objects', () => {
+    const encoded = Buffer.from(
+      'https://cdn.example.com/movie/index.m3u8?token=1',
+      'utf8',
+    ).toString('base64');
+    const html = `<script>var player_aaaa={"url":"${encoded}","encrypt":2}</script>`;
+
+    expect(
+      extractPlaybackUrlFromHtml(html, 'https://site.example/share/abc'),
+    ).toBe('https://cdn.example.com/movie/index.m3u8?token=1');
+  });
+
   it('resolves HLS urls from a nested iframe player page', async () => {
     fetchWithValidatedRedirects
       .mockResolvedValueOnce(
