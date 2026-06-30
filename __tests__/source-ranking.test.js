@@ -57,6 +57,7 @@ describe('playback source ranking', () => {
         pingTime: 220,
         mediaType: 'hls',
         failureKind: 'fragment',
+        playable: true,
       }),
     ).toBe(true);
   });
@@ -68,6 +69,19 @@ describe('playback source ranking', () => {
         hasError: false,
         mediaType: 'page',
         failureKind: 'resolver',
+      }),
+    ).toBe(false);
+  });
+
+  it('does not use recoverable manifest failures as fallback candidates', () => {
+    expect(
+      isPlayableFallbackResult({
+        status: 'partial',
+        hasError: false,
+        pingTime: 600,
+        mediaType: 'hls',
+        failureKind: 'manifest',
+        playable: false,
       }),
     ).toBe(false);
   });

@@ -21,6 +21,8 @@ const {
 
 function textResponse(body, url = '') {
   return {
+    ok: true,
+    status: 200,
     url,
     headers: {
       get(name) {
@@ -137,6 +139,32 @@ describe('playback url resolver', () => {
       'https://site.example/media/index.m3u8?token=1',
     );
     expect(result.referer).toBe('https://site.example/player/abc');
+  });
+
+  it('resolves HLS urls from external player scripts', async () => {
+    fetchWithValidatedRedirects
+      .mockResolvedValueOnce(
+        textResponse(
+          '<script src="/static/player.js"></script>',
+          'https://site.example/share/script-abc',
+        ),
+      )
+      .mockResolvedValueOnce(
+        textResponse(
+          'window.player = {"url":"/media/index.m3u8?token=1"};',
+          'https://site.example/static/player.js',
+        ),
+      );
+
+    const result = await resolveExternalPlaybackUrl(
+      'https://site.example/share/script-abc',
+    );
+
+    expect(result.mediaType).toBe('hls');
+    expect(result.resolvedUrl).toBe(
+      'https://site.example/media/index.m3u8?token=1',
+    );
+    expect(result.referer).toBe('https://site.example/share/script-abc');
   });
 
   it('returns a Chinese message when a playback page has no media url', async () => {

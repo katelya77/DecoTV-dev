@@ -415,6 +415,10 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           !item.videoInfo.hasError &&
           item.videoInfo.failureKind !== 'resolver' &&
           item.videoInfo.failureKind !== 'timeout' &&
+          !(
+            item.videoInfo.failureKind === 'manifest' &&
+            !item.videoInfo.playable
+          ) &&
           (item.videoInfo.status === 'partial' || item.videoInfo.pingTime > 0),
       ).length,
     [sourceItems],
@@ -428,7 +432,9 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           !item.videoInfo.hasError &&
           item.videoInfo.status === 'partial' &&
           (item.videoInfo.failureKind === 'resolver' ||
-            item.videoInfo.failureKind === 'timeout'),
+            item.videoInfo.failureKind === 'timeout' ||
+            (item.videoInfo.failureKind === 'manifest' &&
+              !item.videoInfo.playable)),
       ).length,
     [sourceItems],
   );
@@ -518,6 +524,13 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
       }
 
       if (videoInfo.failureKind === 'timeout') {
+        return {
+          label: '待验证',
+          className: 'text-amber-600 dark:text-amber-300',
+        };
+      }
+
+      if (videoInfo.failureKind === 'manifest' && !videoInfo.playable) {
         return {
           label: '待验证',
           className: 'text-amber-600 dark:text-amber-300',
@@ -947,6 +960,9 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                                       ) : videoInfo.message &&
                                         (videoInfo.failureKind === 'resolver' ||
                                           videoInfo.failureKind === 'timeout' ||
+                                          (videoInfo.failureKind ===
+                                            'manifest' &&
+                                            !videoInfo.playable) ||
                                           !videoInfo.pingTime) ? (
                                         <div
                                           className='truncate text-amber-600 dark:text-amber-300 font-medium text-xs'

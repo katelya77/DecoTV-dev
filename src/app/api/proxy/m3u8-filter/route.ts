@@ -25,10 +25,15 @@ export const runtime = 'nodejs';
 const DEFAULT_UA =
   'Mozilla/5.0 (Linux; Android 10; AndroidTV) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const DESKTOP_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+  '(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
 const FETCH_TIMEOUT_MS = 8000;
+const FETCH_RETRY_TIMEOUT_MS = 5000;
 const MAX_PLAYLIST_BYTES = 2 * 1024 * 1024;
 const MAX_REDIRECTS = 3;
+const MAX_UPSTREAM_ATTEMPTS = 6;
 
 /**
  * 解析广告过滤是否启用：admin 后台开关 > 环境变量 > 默认开。
@@ -114,6 +119,25 @@ function inferAssetKind(upstreamUrl: string): 'segment' | 'key' | 'map' {
     return 'map';
   }
   return 'segment';
+}
+
+function shouldRetryUpstreamStatus(status: number): boolean {
+  return (
+    status === 401 ||
+    status === 403 ||
+    status === 404 ||
+    status === 429 ||
+    status === 500 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504
+  );
+}
+
+function pushUnique<T>(items: T[], item: T) {
+  if (!items.includes(item)) {
+    items.push(item);
+  }
 }
 
 function buildAssetProxyUrl(
@@ -337,95 +361,134 @@ export async function GET(request: Request) {
   const sanitizedExplicitReferer = normalizeHeaderUrl(explicitReferer);
   const inboundReferer = normalizeHeaderUrl(request.headers.get('referer'));
   let fallbackReferer: string | undefined;
+  let playlistDirectoryReferer: string | undefined;
   try {
     fallbackReferer = new URL(decodedUrl).origin + '/';
+    playlistDirectoryReferer = new URL('.', decodedUrl).toString();
   } catch {
     fallbackReferer = undefined;
+    playlistDirectoryReferer = undefined;
   }
   const refererToSend =
     sanitizedExplicitReferer || fallbackReferer || inboundReferer;
 
-  const buildUpstreamHeaders = (refererValue?: string) => {
-    const headers: Record<string, string> = { 'User-Agent': ua };
+  const buildUpstreamHeaders = (
+    refererValue?: string,
+    userAgent = ua,
+    includeOrigin = true,
+  ) => {
+    const headers: Record<string, string> = {
+      Accept:
+        'application/vnd.apple.mpegurl,application/x-mpegURL,text/plain,*/*;q=0.6',
+      'User-Agent': userAgent,
+    };
     if (refererValue) {
       headers.Referer = refererValue;
-      try {
-        headers.Origin = new URL(refererValue).origin;
-      } catch {
-        // ignore
+      if (includeOrigin) {
+        try {
+          headers.Origin = new URL(refererValue).origin;
+        } catch {
+          // ignore
+        }
       }
     }
     return headers;
   };
 
-  const upstreamHeaders = buildUpstreamHeaders(refererToSend);
-  const retryReferer =
-    fallbackReferer && fallbackReferer !== refererToSend
-      ? fallbackReferer
-      : inboundReferer && inboundReferer !== refererToSend
-        ? inboundReferer
-        : undefined;
   let effectiveRefererToSend = refererToSend;
 
-  let upstream: Response;
-  try {
-    upstream = await fetchWithValidatedRedirects(
-      decodedUrl,
-      {
-        cache: 'no-store',
-        headers: upstreamHeaders,
-      },
-      { timeoutMs: FETCH_TIMEOUT_MS, maxRedirects: MAX_REDIRECTS },
-    );
-  } catch (e: any) {
-    if (!retryReferer) {
-      return NextResponse.json(
-        { error: 'Upstream fetch failed', details: e?.message || 'unknown' },
-        { status: 502 },
-      );
+  const attempts: Array<{
+    referer?: string;
+    userAgent: string;
+    includeOrigin: boolean;
+  }> = [];
+  const pushAttempt = (
+    referer: string | undefined,
+    userAgent: string,
+    includeOrigin: boolean,
+  ) => {
+    if (
+      attempts.some(
+        (attempt) =>
+          attempt.referer === referer &&
+          attempt.userAgent === userAgent &&
+          attempt.includeOrigin === includeOrigin,
+      )
+    ) {
+      return;
     }
+    attempts.push({ referer, userAgent, includeOrigin });
+  };
+
+  const refererCandidates: Array<string | undefined> = [];
+  pushUnique(refererCandidates, refererToSend);
+  pushUnique(refererCandidates, fallbackReferer);
+  pushUnique(refererCandidates, playlistDirectoryReferer);
+  pushUnique(refererCandidates, inboundReferer);
+  pushUnique(refererCandidates, undefined);
+
+  pushAttempt(refererToSend, ua, true);
+  for (const referer of refererCandidates) {
+    pushAttempt(referer, ua, true);
+  }
+  for (const referer of refererCandidates) {
+    pushAttempt(referer, DESKTOP_UA, true);
+  }
+  for (const referer of refererCandidates) {
+    pushAttempt(referer, DESKTOP_UA, false);
+  }
+
+  let upstream: Response | null = null;
+  let lastErrorMessage = '';
+  for (const [index, attempt] of attempts
+    .slice(0, MAX_UPSTREAM_ATTEMPTS)
+    .entries()) {
     try {
-      upstream = await fetchWithValidatedRedirects(
+      const response = await fetchWithValidatedRedirects(
         decodedUrl,
         {
           cache: 'no-store',
-          headers: buildUpstreamHeaders(retryReferer),
+          headers: buildUpstreamHeaders(
+            attempt.referer,
+            attempt.userAgent,
+            attempt.includeOrigin,
+          ),
         },
-        { timeoutMs: FETCH_TIMEOUT_MS, maxRedirects: MAX_REDIRECTS },
-      );
-      effectiveRefererToSend = retryReferer;
-    } catch (retryError: any) {
-      return NextResponse.json(
         {
-          error: 'Upstream fetch failed',
-          details: retryError?.message || e?.message || 'unknown',
+          timeoutMs: index === 0 ? FETCH_TIMEOUT_MS : FETCH_RETRY_TIMEOUT_MS,
+          maxRedirects: MAX_REDIRECTS,
         },
-        { status: 502 },
       );
+
+      upstream = response;
+      effectiveRefererToSend = attempt.referer;
+      if (response.ok || !shouldRetryUpstreamStatus(response.status)) {
+        break;
+      }
+
+      lastErrorMessage = `HTTP ${response.status}`;
+      await response.body?.cancel().catch(() => undefined);
+    } catch (e: any) {
+      lastErrorMessage = e?.message || 'unknown';
+      continue;
     }
   }
 
+  if (!upstream) {
+    return NextResponse.json(
+      {
+        error: 'Upstream fetch failed',
+        details: lastErrorMessage || 'unknown',
+      },
+      { status: 502 },
+    );
+  }
+
   if (!upstream.ok) {
-    if (retryReferer && (upstream.status === 403 || upstream.status === 404)) {
-      const retryUpstream = await fetchWithValidatedRedirects(
-        decodedUrl,
-        {
-          cache: 'no-store',
-          headers: buildUpstreamHeaders(retryReferer),
-        },
-        { timeoutMs: FETCH_TIMEOUT_MS, maxRedirects: MAX_REDIRECTS },
-      ).catch(() => null);
-      if (retryUpstream?.ok) {
-        upstream = retryUpstream;
-        effectiveRefererToSend = retryReferer;
-      }
-    }
-    if (!upstream.ok) {
-      return NextResponse.json(
-        { error: 'Upstream returned non-OK', status: upstream.status },
-        { status: 502 },
-      );
-    }
+    return NextResponse.json(
+      { error: 'Upstream returned non-OK', status: upstream.status },
+      { status: 502 },
+    );
   }
 
   let content: string;

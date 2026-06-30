@@ -125,6 +125,41 @@ function isSameOriginUrl(url: URL, request: Request): boolean {
   return url.origin === getEffectiveRequestOrigin(request);
 }
 
+function unwrapSameOriginM3u8ProxyUrl(
+  rawUrl: string,
+  request: Request,
+): { url: string; referer?: string } | null {
+  try {
+    const parsed = resolveFetchUrl(rawUrl, request);
+    if (!isSameOriginUrl(parsed, request)) return null;
+    if (
+      !parsed.pathname.startsWith('/api/proxy/m3u8-filter') &&
+      !parsed.pathname.startsWith('/api/proxy/m3u8')
+    ) {
+      return null;
+    }
+
+    const upstreamUrl = parsed.searchParams.get('url');
+    if (!upstreamUrl || !/^https?:\/\//i.test(upstreamUrl)) return null;
+    return {
+      url: upstreamUrl,
+      referer: parsed.searchParams.get('referer') || undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function isRecoverableManifestStatus(status: number): boolean {
+  return (
+    status === 429 ||
+    status === 500 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504
+  );
+}
+
 function withRequestCookie(headers: Headers, request: Request) {
   const cookie = request.headers.get('cookie');
   if (cookie && !headers.has('cookie')) {
@@ -454,6 +489,42 @@ async function probeHlsPlaybackUrl(
 
   if (!playlistInfo.response.ok) {
     await playlistInfo.response.body?.cancel().catch(() => undefined);
+    const fallbackTarget = unwrapSameOriginM3u8ProxyUrl(url, options.request);
+    if (
+      fallbackTarget &&
+      isRecoverableManifestStatus(playlistInfo.response.status)
+    ) {
+      try {
+        const directResult = await probeHlsPlaybackUrl(fallbackTarget.url, {
+          ...options,
+          referer: fallbackTarget.referer || options.referer,
+        });
+
+        if (directResult.status !== 'failed') {
+          return {
+            ...directResult,
+            message:
+              directResult.message || '代理清单异常，直连播放清单验证可用',
+            resolvedUrl: fallbackTarget.url,
+          };
+        }
+      } catch {
+        // Fall through to a recoverable partial manifest result.
+      }
+    }
+
+    if (isRecoverableManifestStatus(playlistInfo.response.status)) {
+      return buildResult({
+        status: 'partial',
+        message: `播放清单暂时不可访问：HTTP ${playlistInfo.response.status}，播放时将继续尝试`,
+        failureKind: 'manifest',
+        pingTime: playlistInfo.elapsedMs,
+        playable: false,
+        resolvedUrl: url,
+        mediaType: 'hls',
+      });
+    }
+
     return buildResult({
       status: 'failed',
       message: `播放清单不可访问：HTTP ${playlistInfo.response.status}`,

@@ -9,6 +9,8 @@ const DEFAULT_UA =
 const RESOLVE_TIMEOUT_MS = 7000;
 const MAX_REDIRECTS = 3;
 const MAX_TEXT_BYTES = 512 * 1024;
+const MAX_SCRIPT_BYTES = 256 * 1024;
+const MAX_EXTERNAL_SCRIPT_PROBES = 5;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 500;
 
@@ -242,6 +244,9 @@ function resolveCandidateVariants(
     'src',
     'file',
     'm3u8',
+    'id',
+    'vid',
+    'path',
   ];
 
   while (queue.length > 0) {
@@ -308,6 +313,7 @@ export function extractPlaybackCandidatesFromHtml(
     /\bhls\.loadSource\(\s*(['"`])([^'"`]+)\1\s*\)/gi,
     /<(?:source|video|iframe|embed)\b[^>]+src=(['"])([^'"]+)\1/gi,
     /<(?:source|video|meta)\b[^>]+(?:data-src|content)=(['"])([^'"]+)\1/gi,
+    /\bdata-(?:url|play-url|playurl|video-url|m3u8|src|file|source)=(['"])([^'"]+)\1/gi,
   ];
 
   for (const pattern of patterns) {
@@ -331,6 +337,30 @@ export function extractPlaybackCandidatesFromHtml(
   return candidates;
 }
 
+function extractExternalScriptUrlsFromHtml(
+  html: string,
+  pageUrl: string,
+): string[] {
+  if (!html) return [];
+
+  const scripts: string[] = [];
+  for (const match of html.matchAll(/<script\b[^>]+src=(['"])([^'"]+)\1/gi)) {
+    const src = match[2];
+    if (!src || isUnsupportedMediaCandidate(src)) continue;
+
+    try {
+      const resolved = new URL(normalizeEscapedUrl(src), pageUrl).toString();
+      if (/^https?:\/\//i.test(resolved) && !scripts.includes(resolved)) {
+        scripts.push(resolved);
+      }
+    } catch {
+      // ignore invalid script urls
+    }
+  }
+
+  return scripts.slice(0, MAX_EXTERNAL_SCRIPT_PROBES);
+}
+
 export function extractPlaybackUrlFromHtml(
   html: string,
   pageUrl: string,
@@ -345,6 +375,46 @@ export function extractPlaybackUrlFromHtml(
     ) ||
     null
   );
+}
+
+async function extractPlaybackUrlFromExternalScripts(
+  html: string,
+  pageUrl: string,
+): Promise<string | null> {
+  const scriptUrls = extractExternalScriptUrlsFromHtml(html, pageUrl);
+  for (const scriptUrl of scriptUrls) {
+    try {
+      const response = await fetchWithValidatedRedirects(
+        scriptUrl,
+        {
+          cache: 'no-store',
+          headers: {
+            Accept:
+              'application/javascript,text/javascript,text/plain,*/*;q=0.5',
+            Range: `bytes=0-${MAX_SCRIPT_BYTES - 1}`,
+            Referer: pageUrl,
+            'User-Agent': DEFAULT_UA,
+          },
+        },
+        { timeoutMs: RESOLVE_TIMEOUT_MS, maxRedirects: MAX_REDIRECTS },
+      );
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
+        continue;
+      }
+
+      const script = await readTextWithLimit(response, MAX_SCRIPT_BYTES);
+      const extractedUrl = extractPlaybackUrlFromHtml(
+        script,
+        response.url || scriptUrl,
+      );
+      if (extractedUrl) return extractedUrl;
+    } catch {
+      // External player scripts are best-effort; keep trying the next one.
+    }
+  }
+
+  return null;
 }
 
 function extractNestedPlaybackPageUrlFromHtml(
@@ -367,7 +437,10 @@ function extractNestedPlaybackPageUrlFromHtml(
   );
 }
 
-async function readTextWithLimit(response: Response): Promise<string> {
+async function readTextWithLimit(
+  response: Response,
+  maxBytes = MAX_TEXT_BYTES,
+): Promise<string> {
   if (!response.body) return '';
 
   const reader = response.body.getReader();
@@ -380,7 +453,7 @@ async function readTextWithLimit(response: Response): Promise<string> {
     if (done) break;
 
     received += value.byteLength;
-    if (received > MAX_TEXT_BYTES) {
+    if (received > maxBytes) {
       await reader.cancel().catch(() => undefined);
       throw new Error('Playback page too large');
     }
@@ -499,6 +572,23 @@ export async function resolveExternalPlaybackUrl(
       return result;
     }
 
+    const scriptExtractedUrl = await extractPlaybackUrlFromExternalScripts(
+      html,
+      finalUrl,
+    );
+    if (scriptExtractedUrl) {
+      const result = {
+        originalUrl,
+        resolvedUrl: scriptExtractedUrl,
+        mediaType: inferMediaTypeFromUrl(scriptExtractedUrl),
+        resolved: true,
+        referer: finalUrl,
+        contentType,
+      } satisfies PlaybackUrlResolution;
+      setCached(originalUrl, result);
+      return result;
+    }
+
     const nestedPageUrl = extractNestedPlaybackPageUrlFromHtml(html, finalUrl);
     if (nestedPageUrl) {
       try {
@@ -561,6 +651,24 @@ export async function resolveExternalPlaybackUrl(
             originalUrl,
             resolvedUrl: nestedExtractedUrl,
             mediaType: inferMediaTypeFromUrl(nestedExtractedUrl),
+            resolved: true,
+            referer: nestedFinalUrl,
+            contentType: nestedContentType,
+          } satisfies PlaybackUrlResolution;
+          setCached(originalUrl, result);
+          return result;
+        }
+
+        const nestedScriptExtractedUrl =
+          await extractPlaybackUrlFromExternalScripts(
+            nestedHtml,
+            nestedFinalUrl,
+          );
+        if (nestedScriptExtractedUrl) {
+          const result = {
+            originalUrl,
+            resolvedUrl: nestedScriptExtractedUrl,
+            mediaType: inferMediaTypeFromUrl(nestedScriptExtractedUrl),
             resolved: true,
             referer: nestedFinalUrl,
             contentType: nestedContentType,

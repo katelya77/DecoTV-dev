@@ -885,6 +885,7 @@ function PlayPageClient() {
     typeof setInterval
   > | null>(null);
   const playbackVisualWatchdogStartedAtRef = useRef(0);
+  const directPlaybackRetryKeysRef = useRef<Set<string>>(new Set());
   const autoSwitchToNextVerifiedSourceRef = useRef<
     (reason: string, failureKind?: VideoSourceFailureKind) => boolean
   >(() => false);
@@ -2279,6 +2280,60 @@ function PlayPageClient() {
     preparePlaybackVideoElement(video);
   };
 
+  const unwrapDirectUrlFromM3u8Proxy = (url: string): string | null => {
+    if (!url || typeof window === 'undefined') return null;
+    try {
+      const parsed = new URL(url, window.location.origin);
+      if (
+        parsed.pathname !== '/api/proxy/m3u8-filter' &&
+        parsed.pathname !== '/api/proxy/m3u8'
+      ) {
+        return null;
+      }
+
+      const upstreamUrl = parsed.searchParams.get('url');
+      if (!upstreamUrl || !/^https?:\/\//i.test(upstreamUrl)) return null;
+      return upstreamUrl;
+    } catch {
+      return null;
+    }
+  };
+
+  const retryCurrentSourceDirectly = (reason: string) => {
+    const activeSource = currentSourceRef.current;
+    const activeId = currentIdRef.current;
+    const episodeIndex = currentEpisodeIndexRef.current;
+    if (!activeSource || !activeId || isPrivateLibrarySource(activeSource)) {
+      return false;
+    }
+
+    const directUrl = unwrapDirectUrlFromM3u8Proxy(videoUrl);
+    if (!directUrl || directUrl === videoUrl) return false;
+
+    const retryKey = `${activeSource}-${activeId}-${episodeIndex}`;
+    if (directPlaybackRetryKeysRef.current.has(retryKey)) return false;
+    directPlaybackRetryKeysRef.current.add(retryKey);
+
+    const rawEpisodeUrl =
+      detailRef.current?.episodes?.[episodeIndex] ||
+      detailRef.current?.episodes?.[0] ||
+      '';
+    if (rawEpisodeUrl) {
+      playbackUrlCacheRef.current.set(
+        `${activeSource}|${rawEpisodeUrl}`,
+        directUrl,
+      );
+    }
+
+    resumeTimeRef.current =
+      artPlayerRef.current?.currentTime || resumeTimeRef.current;
+    setVideoLoadingStage('sourceChanging');
+    setIsVideoLoading(true);
+    showToast(`${reason}，正在尝试直连播放`, 'info');
+    setVideoUrl(directUrl);
+    return true;
+  };
+
   const clearPlaybackVisualWatchdog = () => {
     if (playbackVisualWatchdogTimerRef.current) {
       clearInterval(playbackVisualWatchdogTimerRef.current);
@@ -2928,7 +2983,9 @@ function PlayPageClient() {
         Number(player?.duration || 0) > 0;
       if (hasStarted) return;
 
-      autoSwitchToNextVerifiedSourceRef.current('首片加载超时，未取得媒体分片');
+      const reason = '首片加载超时，未取得媒体分片';
+      if (retryCurrentSourceDirectly(reason)) return;
+      autoSwitchToNextVerifiedSourceRef.current(reason);
     }, PLAYBACK_STARTUP_FAILOVER_MS);
 
     return () => {
@@ -4102,6 +4159,10 @@ function PlayPageClient() {
                       hls.startLoad();
                       return;
                     }
+                    if (retryCurrentSourceDirectly(message)) {
+                      hls.destroy();
+                      return;
+                    }
                     hls.destroy();
                     autoSwitchToNextVerifiedSourceRef.current(
                       message,
@@ -4550,7 +4611,9 @@ function PlayPageClient() {
         if (artPlayerRef.current.currentTime > 0) {
           return;
         }
-        autoSwitchToNextVerifiedSourceRef.current('播放器无法加载当前播放源');
+        const reason = '播放器无法加载当前播放源';
+        if (retryCurrentSourceDirectly(reason)) return;
+        autoSwitchToNextVerifiedSourceRef.current(reason);
       });
 
       // 监听视频播放结束事件，自动播放下一集
